@@ -21,7 +21,13 @@ export default async function getNewFeedItems() {
   for (let i = 0; i < feeds.length; i++) {
     const { feedUrl } = feeds[i];
     console.log(`Fetching feed items from ${feedUrl}`);
-    const feedItems = await getNewFeedItemsFrom(feedUrl);
+    feedItems = []
+    try {
+      feedItems = await getNewFeedItemsFrom(feedUrl);
+    } cache(err) {
+      console.error(`Error fetching ${feedUrl}`)
+      feedItems = []
+    }
     allNewFeedItems = [...allNewFeedItems, ...feedItems];
   }
 
