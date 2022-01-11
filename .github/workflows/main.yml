@@ -20,4 +20,5 @@ jobs:
           node-version: 14
       - name: Update Notion Feed
         run: |
-          node /github/workspace/dist/index.js
+          ls -lah
+          node dist/index.js
