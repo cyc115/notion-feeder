@@ -6,11 +6,16 @@ async function getNewFeedItemsFrom(feedUrl) {
   const parser = new Parser();
   const rss = await parser.parseURL(feedUrl);
   const todaysDate = new Date().getTime() / 1000;
-  return rss.items.filter((item) => {
+  const items = rss.items.filter((item) => {
     const blogPublishedDate = new Date(item.pubDate).getTime() / 1000;
     const { diffInDays } = timeDifference(todaysDate, blogPublishedDate);
-    return diffInDays === 0;
+    return diffInDays <= 2*365; // 2 year
   });
+
+  // reverse sort based on date and take 150 max
+  return items
+    .sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))
+    .slice(0, 150)
 }
 
 export default async function getNewFeedItems() {
