@@ -10,15 +10,15 @@ async function index() {
 
   for (let i = 0; i < feedItems.length; i++) {
     const item = feedItems[i];
+    const content = item['content:encoded'] || item["content"]
     const notionItem = {
       title: item.title,
       link: item.link,
-      content: htmlToNotionBlocks(item.content),
+      content: htmlToNotionBlocks(content), // TODO extract readble version from the link
     };
     await addFeedItemToNotion(notionItem);
   }
-
-  await deleteOldUnreadFeedItemsFromNotion();
+  // await deleteOldUnreadFeedItemsFromNotion();
 }
 
 index();

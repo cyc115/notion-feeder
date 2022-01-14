@@ -58,6 +58,6 @@ module.exports = (env) => {
         },
       ],
     },
-    plugins: [new ESLintPlugin(), new webpack.ProgressPlugin()],
+    plugins: [ new webpack.ProgressPlugin()],
   };
 };

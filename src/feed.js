@@ -24,8 +24,9 @@ export default async function getNewFeedItems() {
     let feedItems = [];
     try {
       feedItems = await getNewFeedItemsFrom(feedUrl);
+      console.log(`item length: ${feedItems.length}`)
     } catch (err) {
-      console.error(`Error fetching ${feedUrl}`);
+      console.error(`Error fetching ${feedUrl} ${err}`);
       feedItems = [];
     }
     allNewFeedItems = [...allNewFeedItems, ...feedItems];
@@ -34,5 +35,6 @@ export default async function getNewFeedItems() {
   // sort feed items by published date
   allNewFeedItems.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
 
+  console.log(`Total number of feeds: ${allNewFeedItems.length}`)
   return allNewFeedItems;
 }
