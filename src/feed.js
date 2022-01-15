@@ -15,16 +15,17 @@ async function getNewFeedItemsFrom(feedUrl) {
   const parser = new Parser();
   const rss = await parser.parseURL(feedUrl);
   const todaysDate = new Date().getTime() / 1000;
-  const items = rss.items.filter((item) => {
-    const blogPublishedDate = new Date(item.pubDate).getTime() / 1000;
-    const { diffInDays } = timeDifference(todaysDate, blogPublishedDate);
-    return diffInDays <= 2 * NOTION_FEEDER_BACKFILL_YEARS;
-  });
+  const items = rss.items
+        .filter((item) => {
+          const blogPublishedDate = new Date(item.pubDate).getTime() / 1000;
+          const { diffInDays } = timeDifference(todaysDate, blogPublishedDate);
+          return diffInDays <= 356 * NOTION_FEEDER_BACKFILL_YEARS;
+        });
 
-  // reverse sort based on date and take 150 max
-  return items
-    .sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))
-    .slice(0, NOTION_FEEDER_MAX_ITEMS)
+  // reverse sort based on date and take NOTION_FEEDER_MAX_ITEMS
+  // per feed
+  items.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))
+  return items.slice(0, NOTION_FEEDER_MAX_ITEMS)
 }
 
 export default async function getNewFeedItems() {
@@ -38,7 +39,7 @@ export default async function getNewFeedItems() {
     let feedItems = [];
     try {
       feedItems = await getNewFeedItemsFrom(feedUrl);
-      console.log(`item length: ${feedItems.length}`)
+      console.log(`number of articles: ${feedItems.length}`)
     } catch (err) {
       console.error(`Error fetching ${feedUrl} ${err}`);
       feedItems = [];
