@@ -1,6 +1,15 @@
 import Parser from 'rss-parser';
 import timeDifference from './helpers';
 import { getFeedUrlsFromNotion } from './notion';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const {
+  NOTION_FEEDER_MAX_ITEMS,
+  NOTION_FEEDER_BACKFILL_YEARS,
+} = process.env;
+
 
 async function getNewFeedItemsFrom(feedUrl) {
   const parser = new Parser();
@@ -9,13 +18,13 @@ async function getNewFeedItemsFrom(feedUrl) {
   const items = rss.items.filter((item) => {
     const blogPublishedDate = new Date(item.pubDate).getTime() / 1000;
     const { diffInDays } = timeDifference(todaysDate, blogPublishedDate);
-    return diffInDays <= 2*365; // 2 year
+    return diffInDays <= 2 * NOTION_FEEDER_BACKFILL_YEARS;
   });
 
   // reverse sort based on date and take 150 max
   return items
     .sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))
-    .slice(0, 150)
+    .slice(0, NOTION_FEEDER_MAX_ITEMS)
 }
 
 export default async function getNewFeedItems() {
