@@ -9,7 +9,8 @@ import read from 'node-readability'
 
 async function getItemContent(item) {
   const data = await got.get(item.link)
-  return await getRedableContent(data.body)
+  const readable_content = await getRedableContent(data.body)
+  return readable_content || item['content:encoded'] || item['content'] || 'page not captured'
 }
 
 async function getRedableContent(html) {
