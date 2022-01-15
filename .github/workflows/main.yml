@@ -13,12 +13,12 @@ jobs:
       NOTION_READER_DATABASE_ID: ${{ secrets.NOTION_READER_DATABASE_ID }}
       NOTION_FEEDS_DATABASE_ID: ${{ secrets.NOTION_FEEDS_DATABASE_ID }}
     steps:
+      - uses: actions/checkout@v2
       - name: Setup Node
         uses: actions/setup-node@v2
         with:
           node-version: 14
-
       - name: Update Notion Feed
         run: |
-          # curl -o index.js https://github.com/cyc115/notion-feeder/blob/master/dist/index.js?raw=true
-          node /github/workspace/dist/index.js
+          ls -lah
+          node dist/index.js
