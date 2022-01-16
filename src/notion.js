@@ -67,6 +67,7 @@ export async function getExistingArticles() {
 export async function addFeedItemToNotion(notionItem) {
   const { title, link, content } = notionItem;
 
+  console.log(`adding Feed Item to Notion ${title}: ${link}`)
   const notion = new Client({
     auth: NOTION_API_TOKEN,
     logLevel,
