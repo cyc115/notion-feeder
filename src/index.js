@@ -10,7 +10,7 @@ import read from 'node-readability'
 async function getItemContent(item) {
   const data = await got.get(item.link)
   const readable_content = await getRedableContent(data.body)
-  return readable_content || item['content:encoded'] || item['content'] || 'page not captured'
+  return readable_content || item['content:encoded'] || item['content'] || 'page not captured due to error'
 }
 
 async function getRedableContent(html) {
@@ -34,7 +34,6 @@ async function index() {
 
   for (let i = 0; i < feedItems.length; i++) {
     const item = feedItems[i];
-    // const content = item['content:encoded'] || item['content']
     const content = await getItemContent(item)
     const notionItem = {
       title: item.title,

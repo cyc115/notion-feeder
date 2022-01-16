@@ -7,11 +7,11 @@ dotenv.config();
 
 const {
   NOTION_FEEDER_MAX_ITEMS,
-  NOTION_FEEDER_BACKFILL_YEARS,
+  NOTION_FEEDER_BACKFILL_DAYS,
 } = process.env;
 
 
-async function getNewFeedItemsFrom(feedUrl) {
+async function getNewFeedItemsFrom(feedUrl, daysToBackfill=1) {
   const parser = new Parser();
   const rss = await parser.parseURL(feedUrl);
   const todaysDate = new Date().getTime() / 1000;
@@ -19,7 +19,7 @@ async function getNewFeedItemsFrom(feedUrl) {
         .filter((item) => {
           const blogPublishedDate = new Date(item.pubDate).getTime() / 1000;
           const { diffInDays } = timeDifference(todaysDate, blogPublishedDate);
-          return diffInDays <= 356 * NOTION_FEEDER_BACKFILL_YEARS;
+          return diffInDays <= daysToBackfill;
         });
 
   // reverse sort based on date and take NOTION_FEEDER_MAX_ITEMS
@@ -38,7 +38,7 @@ export default async function getNewFeedItems() {
     console.log(`Fetching feed items from ${feedUrl}`);
     let feedItems = [];
     try {
-      feedItems = await getNewFeedItemsFrom(feedUrl);
+      feedItems = await getNewFeedItemsFrom(feedUrl, NOTION_FEEDER_BACKFILL_DAYS);
       console.log(`number of articles: ${feedItems.length}`)
     } catch (err) {
       console.error(`Error fetching ${feedUrl} ${err}`);
