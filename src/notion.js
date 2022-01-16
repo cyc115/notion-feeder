@@ -11,13 +11,12 @@ const {
 } = process.env;
 
 const logLevel = CI ? LogLevel.INFO : LogLevel.DEBUG;
+const notion = new Client({
+  auth: NOTION_API_TOKEN,
+  logLevel,
+});
 
 export async function getFeedUrlsFromNotion() {
-  const notion = new Client({
-    auth: NOTION_API_TOKEN,
-    logLevel,
-  });
-
   let response;
   try {
     response = await notion.databases.query({
@@ -44,6 +43,25 @@ export async function getFeedUrlsFromNotion() {
   }));
 
   return feeds;
+}
+
+export async function getExistingArticles() {
+  let response;
+  try {
+    response = await notion.databases.query({
+      database_id: NOTION_READER_DATABASE_ID,
+    });
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
+
+  const articles = response.results.map((article) => ({
+    title: article.properties.Title.title[0].plain_text,
+    url: article.properties.Link.url,
+  }));
+
+  return articles;
 }
 
 export async function addFeedItemToNotion(notionItem) {
