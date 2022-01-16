@@ -46,28 +46,44 @@ export async function getFeedUrlsFromNotion() {
 }
 
 export async function getExistingArticles() {
-  let response;
-  try {
-    response = await notion.databases.query({
+  let cursor = undefined
+  let articles = []
+
+  while (true) {
+    let {results, next_cursor} = await notion.databases.query({
       database_id: NOTION_READER_DATABASE_ID,
+      start_cursor: cursor,
     });
-  } catch (err) {
-    console.error(err);
-    return [];
+
+    articles = articles.concat(
+      results.map((article) => {
+        let res = undefined
+        try {
+          res = {
+            title: article.properties.Title.title[0].plain_text,
+            url: article.properties.Link.url,
+          }
+        } catch (err) {
+          res = {
+            title: article.properties.Link.url,
+            url: article.properties.Link.url,
+          }
+        }
+        return res
+      }))
+
+    if(!next_cursor) {
+      break
+    }
+    cursor = next_cursor
   }
-
-  const articles = response.results.map((article) => ({
-    title: article.properties.Title.title[0].plain_text,
-    url: article.properties.Link.url,
-  }));
-
   return articles;
 }
 
 export async function addFeedItemToNotion(notionItem) {
   const { title, link, content } = notionItem;
 
-  console.log(`adding Feed Item to Notion ${title}: ${link}`)
+  console.log(`adding article to Notion: ${title}: ${link}`)
   const notion = new Client({
     auth: NOTION_API_TOKEN,
     logLevel,
@@ -97,14 +113,11 @@ export async function addFeedItemToNotion(notionItem) {
   } catch (err) {
     console.error(err);
   }
+
+  console.log(`added ${title}`)
 }
 
 export async function deleteOldUnreadFeedItemsFromNotion() {
-  const notion = new Client({
-    auth: NOTION_API_TOKEN,
-    logLevel,
-  });
-
   // Create a datetime which is 30 days earlier than the current time
   const fetchBeforeDate = new Date();
   fetchBeforeDate.setDate(fetchBeforeDate.getDate() - 30);
