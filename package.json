@@ -13,8 +13,9 @@
   ],
   "scripts": {
     "develop": "webpack --watch",
-    "build": "webpack",
     "build-prod": "webpack --env mode='production'",
+    "docker-build": "docker build -t notion-feeder .; docker tag notion-feeder:latest 865152046867.dkr.ecr.us-west-2.amazonaws.com/notion-feeder:latest",
+    "ecr-push" : "aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 865152046867.dkr.ecr.us-west-2.amazonaws.com; docker push 865152046867.dkr.ecr.us-west-2.amazonaws.com/notion-feeder:latest",
     "feed": "node dist/index.js"
   },
   "author": "Ravgeet Dhillon <ravgeetdhillon@gmail.com>",
