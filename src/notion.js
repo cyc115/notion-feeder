@@ -45,6 +45,7 @@ export async function getFeedUrlsFromNotion() {
   return feeds;
 }
 
+// Get a list of existing articles from the reader DB
 export async function getExistingArticles() {
   let cursor = undefined
   let articles = []
