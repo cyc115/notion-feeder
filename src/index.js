@@ -20,7 +20,15 @@ async function getItemContent(item) {
     console.log(`could not get full text for ${item.link}`)
   }
 
-  return readable_content || item['content:encoded'] || item['content'] || 'page not captured due to error'
+  // sort based on length and choose the longest one
+  return [
+    readable_content || '',
+    item['content:encoded'] || '',
+    item['content'] || '',
+    'page not captured due to error'
+  ].reduce(function (a,b) {
+    return a.length > b.length ? a:b
+  })
 }
 
 async function getRedableContent(html) {
