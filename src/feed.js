@@ -31,8 +31,23 @@ async function getNewFeedArticlesFrom(feed, daysToBackfill = 1) {
   return items.slice(0, NOTION_FEEDER_MAX_ITEMS);
 }
 
+// return true if any of the feed filter matches the article
+// otherwise return false
+function matchFeedFilter(article) {
+  // console.log(article.title);
+  // console.log(Object.keys(article));
+  const keys = Object.keys(article);
 
-  return true;
+  return article.feed.filters.some((filter) => {
+    const match =
+      keys.includes(filter.field) && article[filter.field].match(filter.regex);
+    if (match) {
+      console.log(
+        `Article "${article.title}" matched filter "${filter.field}"`
+      );
+    }
+    return match;
+  });
 }
 export default async function getNewFeedItems() {
   const existingArticles = await getExistingArticles();
@@ -45,18 +60,18 @@ export default async function getNewFeedItems() {
   // go through each of the feeds and collect articles in
   for (let i = 0; i < feeds.length; i++) {
     const feed = feeds[i];
-    console.log(`Fetching feed items from ${feed.feedUrl}`);
+    console.log(`Fetching from ${feed.feedUrl}`);
     let feedItems = [];
     try {
       feedItems = await getNewFeedArticlesFrom(
         feed,
         NOTION_FEEDER_BACKFILL_DAYS
       );
-      console.log(`number of articles in feed: ${feedItems.length}`);
+      console.log(`Number of articles in ${feed.feedUrl}: ${feedItems.length}`);
 
       feedItems = feedItems.filter((item) => matchFeedFilter(item));
       console.log(
-        `number of articles meets the filter requirement: ${feedItems.length}`
+        `Number of articles meets the filter requirement: ${feedItems.length}`
       );
     } catch (err) {
       console.error(`Error fetching ${feed.feedUrl} ${err}`);
@@ -72,7 +87,7 @@ export default async function getNewFeedItems() {
   newArticles = newArticles.filter((item) => {
     const isDup = !!existingArticles.find((a) => a.url === item.link);
     if (isDup) {
-      console.log(`found dup :${item.link}`);
+      console.log(`Remove duplicated article: ${item.title}`);
     } else {
       // Add the current article to dup list
       existingArticles.push({
@@ -83,6 +98,6 @@ export default async function getNewFeedItems() {
     return !isDup;
   });
 
-  console.log(`Total number of feeds: ${newArticles.length}`);
+  console.log(`Total new articles: ${newArticles.length}`);
   return newArticles;
 }

@@ -29,7 +29,7 @@ function patternToRegex(filter) {
     return /.*/;
   }
   try {
-    return new RegExp(filter.pattern);
+    return new RegExp(filter.pattern, 'i'); // ignore case in pattern
   } catch (err) {
     console.error(err);
     return /.*/;
