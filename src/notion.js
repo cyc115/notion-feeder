@@ -16,6 +16,60 @@ const notion = new Client({
   logLevel,
 });
 
+// ensure the filter object has the pattern and field key
+function filterHasRequiredKeys(filter) {
+  return !!(filter?.field && filter?.pattern);
+}
+
+// convert a string pattern to regex
+// match all if pattern is empty or is not a valid regex
+function patternToRegex(filter) {
+  if (filter?.pattern === '') {
+    console.error('filter pattern is empty. Return /.*/ instead');
+    return /.*/;
+  }
+  try {
+    return new RegExp(filter.pattern, 'i'); // ignore case in pattern
+  } catch (err) {
+    console.error(err);
+    return /.*/;
+  }
+}
+
+// Return a feed's filter array
+// eg.
+// [
+//     {
+//         "field": "Title",
+//         "pattern": "(?i)(security|privacy|auth)",
+//         "regex": /(?i)(security|privacy|auth)/
+//     },
+//     {
+//         "field": "Content",
+//         "pattern": "(?i)(security|privacy|auth)",
+//         "regex": /(?i)(security|privacy|auth)/
+//     }
+// ]
+export function getFeedItemFilter(feedItem) {
+  const filterStr = feedItem.properties.Filter.rich_text[0]?.plain_text;
+  let filters = [];
+  try {
+    filters = JSON.parse(filterStr);
+  } catch (err) {
+    console.warn(`Filter string ${filterStr} is invalid json`);
+    filters = JSON.parse('[]');
+  }
+  const validFilters = [];
+  for (let i = 0; i < filters.length; i++) {
+    if (filterHasRequiredKeys(filters[i])) {
+      const filter = filters[i];
+      filter.regex = patternToRegex(filter);
+      validFilters.push(filter);
+    }
+  }
+  return validFilters;
+}
+
 export async function getFeedUrlsFromNotion() {
   let response;
   try {
@@ -37,45 +91,47 @@ export async function getFeedUrlsFromNotion() {
     return [];
   }
 
-  const feeds = response.results.map((item) => ({
-    title: item.properties.Title.title[0].plain_text,
-    feedUrl: item.properties.Link.url,
+  const feeds = response.results.map((feedItem) => ({
+    title: feedItem.properties.Title.title[0].plain_text,
+    feedUrl: feedItem.properties.Link.url,
+    filters: getFeedItemFilter(feedItem),
   }));
-
   return feeds;
 }
 
+// Get a list of existing articles from the reader DB
 export async function getExistingArticles() {
-  let cursor = undefined
-  let articles = []
+  let cursor = undefined;
+  let articles = [];
 
   while (true) {
-    let {results, next_cursor} = await notion.databases.query({
+    const { results, next_cursor } = await notion.databases.query({
       database_id: NOTION_READER_DATABASE_ID,
       start_cursor: cursor,
     });
 
     articles = articles.concat(
       results.map((article) => {
-        let res = undefined
+        let res = undefined;
         try {
           res = {
             title: article.properties.Title.title[0].plain_text,
             url: article.properties.Link.url,
-          }
+          };
         } catch (err) {
           res = {
             title: article.properties.Link.url,
             url: article.properties.Link.url,
-          }
+          };
         }
-        return res
-      }))
+        return res;
+      })
+    );
 
-    if(!next_cursor) {
-      break
+    if (!next_cursor) {
+      break;
     }
-    cursor = next_cursor
+    cursor = next_cursor;
   }
   return articles;
 }
@@ -83,7 +139,7 @@ export async function getExistingArticles() {
 export async function addFeedItemToNotion(notionItem) {
   const { title, link, content } = notionItem;
 
-  console.log(`adding article to Notion: ${title}: ${link}`)
+  console.log(`adding article to Notion: ${title}: ${link}`);
   const notion = new Client({
     auth: NOTION_API_TOKEN,
     logLevel,
@@ -114,7 +170,7 @@ export async function addFeedItemToNotion(notionItem) {
     console.error(err);
   }
 
-  console.log(`added ${title}`)
+  console.log(`added ${title}`);
 }
 
 export async function deleteOldUnreadFeedItemsFromNotion() {

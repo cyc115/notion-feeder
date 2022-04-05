@@ -5,70 +5,105 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const {
-  NOTION_FEEDER_MAX_ITEMS,
-  NOTION_FEEDER_BACKFILL_DAYS,
-} = process.env;
+const { NOTION_FEEDER_MAX_ITEMS, NOTION_FEEDER_BACKFILL_DAYS } = process.env;
 
-
-async function getNewFeedItemsFrom(feedUrl, daysToBackfill=1) {
+async function getNewFeedArticlesFrom(feed, daysToBackfill = 1) {
   const parser = new Parser();
-  const rss = await parser.parseURL(feedUrl);
+  const rss = await parser.parseURL(feed.feedUrl);
   const todaysDate = new Date().getTime() / 1000;
-  const items = rss.items
-        .filter((item) => {
-          const blogPublishedDate = new Date(item.pubDate).getTime() / 1000;
-          const { diffInDays } = timeDifference(todaysDate, blogPublishedDate);
-          return diffInDays <= daysToBackfill;
-        });
 
-  // reverse sort based on date and take NOTION_FEEDER_MAX_ITEMS
+  // only select the articles that more recent than daysToBackfill
+  const items = rss.items.filter((item) => {
+    const blogPublishedDate = new Date(item.pubDate).getTime() / 1000;
+    const { diffInDays } = timeDifference(todaysDate, blogPublishedDate);
+    return diffInDays <= daysToBackfill;
+  });
+
+  // reverse sort based on date and only take NOTION_FEEDER_MAX_ITEMS
   // per feed
-  items.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))
-  return items.slice(0, NOTION_FEEDER_MAX_ITEMS)
+  items.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
+
+  // attach the feed object to each feed article
+  for (let i = 0; i < items.length; i++) {
+    items[0].feed = feed;
+  }
+
+  return items.slice(0, NOTION_FEEDER_MAX_ITEMS);
 }
 
+// return true if any of the feed filter matches the article
+// otherwise return false
+function matchFeedFilter(article) {
+  const keys = Object.keys(article);
+  const feedFilters = article.feed.filters;
+
+  // if no filter then everything matches
+  if (feedFilters.length == 0) {
+    return true;
+  }
+
+  // else only return the feeds that matches filter
+  return feedFilters.some((filter) => {
+    const match =
+      keys.includes(filter.field) && article[filter.field].match(filter.regex);
+    if (match) {
+      console.log(
+        `Article "${article.title}" matched filter "${filter.field}"`
+      );
+    }
+    return match;
+  });
+}
 export default async function getNewFeedItems() {
-  let allNewFeedItems = [];
+  const existingArticles = await getExistingArticles();
+  console.log(
+    `Number of articles in the reader db: ${existingArticles.length}`
+  );
 
   const feeds = await getFeedUrlsFromNotion();
-  const existingArticles = await getExistingArticles();
-  console.log(`Number of articles in the reader db: ${existingArticles.length}`)
-
-
+  let newArticles = [];
+  // go through each of the feeds and collect articles in
   for (let i = 0; i < feeds.length; i++) {
-    const { feedUrl } = feeds[i];
-    console.log(`Fetching feed items from ${feedUrl}`);
+    const feed = feeds[i];
+    console.log(`Fetching from ${feed.feedUrl}`);
+
     let feedItems = [];
     try {
-      feedItems = await getNewFeedItemsFrom(feedUrl, NOTION_FEEDER_BACKFILL_DAYS);
-      console.log(`number of articles in feed: ${feedItems.length}`)
+      feedItems = await getNewFeedArticlesFrom(
+        feed,
+        NOTION_FEEDER_BACKFILL_DAYS
+      );
+      console.log(`Number of articles in ${feed.feedUrl}: ${feedItems.length}`);
+
+      feedItems = feedItems.filter((item) => matchFeedFilter(item));
+      console.log(
+        `Number of articles meets the filter requirement: ${feedItems.length}`
+      );
     } catch (err) {
-      console.error(`Error fetching ${feedUrl} ${err}`);
+      console.error(`Error fetching ${feed.feedUrl} ${err}`);
       feedItems = [];
     }
-    allNewFeedItems = [...allNewFeedItems, ...feedItems];
+    newArticles = [...newArticles, ...feedItems];
   }
 
   // sort feed items by published date
-  allNewFeedItems.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
+  newArticles.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
 
-  // Do not add items already exist in reader
-  allNewFeedItems = allNewFeedItems.filter(item => {
-    const isDup = !!existingArticles.find(a => a.url === item.link)
+  // Do not add items already in existingArticles
+  newArticles = newArticles.filter((item) => {
+    const isDup = !!existingArticles.find((a) => a.url === item.link);
     if (isDup) {
-      console.log(`found dup :${item.link}`)
-    }
-    else {
+      console.log(`Remove duplicated article: ${item.title}`);
+    } else {
       // Add the current article to dup list
       existingArticles.push({
-        url: item.link
-      })
+        url: item.link,
+      });
     }
 
-    return !isDup
-  })
+    return !isDup;
+  });
 
-  console.log(`Total number of feeds: ${allNewFeedItems.length}`)
-  return allNewFeedItems;
+  console.log(`Total new articles: ${newArticles.length}`);
+  return newArticles;
 }
