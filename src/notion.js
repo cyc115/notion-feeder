@@ -52,7 +52,13 @@ function patternToRegex(filter) {
 // ]
 export function getFeedItemFilter(feedItem) {
   const filterStr = feedItem.properties.Filter.rich_text[0]?.plain_text;
-  const filters = JSON.parse(filterStr || '[]');
+  let filters = [];
+  try {
+    filters = JSON.parse(filterStr);
+  } catch (err) {
+    console.warn(`Filter string ${filterStr} is invalid json`);
+    filters = JSON.parse('[]');
+  }
   const validFilters = [];
   for (let i = 0; i < filters.length; i++) {
     if (filterHasRequiredKeys(filters[i])) {
