@@ -13,6 +13,7 @@ module.exports = (env) => {
   return {
     target: 'node',
     mode: isProductionMode ? 'production' : 'development',
+    devtool: 'source-map',
     context: __dirname,
     entry: getSrcPath('/index.js'),
     stats: { errorDetails: !isProductionMode },
@@ -58,6 +59,6 @@ module.exports = (env) => {
         },
       ],
     },
-    plugins: [ new webpack.ProgressPlugin()],
+    plugins: [new webpack.ProgressPlugin()],
   };
 };

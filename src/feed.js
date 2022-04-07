@@ -33,12 +33,12 @@ async function getNewFeedArticlesFrom(feed, daysToBackfill = 1) {
 
 // return true if any of the feed filter matches the article
 // otherwise return false
-function matchFeedFilter(article) {
+function matchFeedFilter(feed, article) {
   const keys = Object.keys(article);
-  const feedFilters = article.feed.filters;
+  const feedFilters = feed.filters;
 
   // if no filter then everything matches
-  if (feedFilters.length == 0) {
+  if (feedFilters.length === 0) {
     return true;
   }
 
@@ -75,7 +75,7 @@ export default async function getNewFeedItems() {
       );
       console.log(`Number of articles in ${feed.feedUrl}: ${feedItems.length}`);
 
-      feedItems = feedItems.filter((item) => matchFeedFilter(item));
+      feedItems = feedItems.filter((item) => matchFeedFilter(feed, item));
       console.log(
         `Number of articles meets the filter requirement: ${feedItems.length}`
       );

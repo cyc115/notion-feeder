@@ -41,17 +41,17 @@ function patternToRegex(filter) {
 // [
 //     {
 //         "field": "Title",
-//         "pattern": "(?i)(security|privacy|auth)",
-//         "regex": /(?i)(security|privacy|auth)/
+//         "pattern": "(security|privacy|auth)",
+//         "regex": /(security|privacy|auth)/
 //     },
 //     {
 //         "field": "Content",
-//         "pattern": "(?i)(security|privacy|auth)",
-//         "regex": /(?i)(security|privacy|auth)/
+//         "pattern": "(security|privacy|auth)",
+//         "regex": /(security|privacy|auth)/
 //     }
 // ]
 export function getFeedItemFilter(feedItem) {
-  const filterStr = feedItem.properties.Filter.rich_text[0]?.plain_text;
+  const filterStr = feedItem.properties.Filter.rich_text[0]?.plain_text || '[]';
   let filters = [];
   try {
     filters = JSON.parse(filterStr);
