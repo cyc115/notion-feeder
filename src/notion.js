@@ -182,6 +182,26 @@ function compressContentIfTooLong(contentArr) {
   return contentArr;
 }
 
+// each text block need to be less than 2000 characters long
+function ensureTextBlockSizeWithinlimit(contentArr) {
+  if (!Array.isArray(contentArr)) {
+    throw new Error('Cannot redact content unless content is an array');
+  }
+
+  for (let i = 0; i < contentArr.length; i++) {
+    const { paragraph, type } = contentArr[i];
+    if (type === 'paragraph') {
+      paragraph.text.forEach((tb) => {
+        if (tb.text.content.length >= 2000) {
+          tb.text.content = tb.text.content.slice(0, 2000);
+        }
+      });
+    }
+  }
+
+  return contentArr;
+}
+
 export async function addFeedItemToNotion(notionItem) {
   const { title, link, content } = notionItem;
 
@@ -210,12 +230,15 @@ export async function addFeedItemToNotion(notionItem) {
           url: link,
         },
       },
-      children: compressContentIfTooLong(content),
+      children: ensureTextBlockSizeWithinlimit(
+        compressContentIfTooLong(content)
+      ),
     });
   } catch (err) {
     console.error(err);
     console.log(`title: ${title}`);
     console.log(`link: ${link}`);
+    console.log(`error: ${err.message}`);
   }
 
   console.log(`added ${title}`);
