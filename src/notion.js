@@ -238,6 +238,9 @@ export async function addFeedItemToNotion(notionItem) {
     console.error(err);
     console.log(`title: ${title}`);
     console.log(`link: ${link}`);
+    // TODO look into datadog to collect metrics on how many
+    // each error occures
+    // eg. {"object":"error","status":400,"code":"validation_error","message":"Number of blocks in the request exceeds limit of 1000."}
     console.log(`error: ${err.message}`);
   }
 
