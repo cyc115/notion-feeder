@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { Client, LogLevel } from '@notionhq/client';
+import * as fs from 'fs';
 
 dotenv.config();
 
@@ -9,6 +10,7 @@ const {
   NOTION_FEEDS_DATABASE_ID,
   CI,
 } = process.env;
+const MAX_PARAGRAPH_LENGTH = 95;
 
 const logLevel = CI ? LogLevel.INFO : LogLevel.DEBUG;
 const notion = new Client({
@@ -136,6 +138,50 @@ export async function getExistingArticles() {
   return articles;
 }
 
+// notion only allow a paragraph to have 100 line or less of text.
+// compress the lines beyong 95 to one single line if possible
+function compressContentIfTooLong(contentArr) {
+  if (!Array.isArray(contentArr)) {
+    throw new Error('Cannot redact content unless content is an array');
+  }
+
+  for (let i = 0; i < contentArr.length; i++) {
+    const { paragraph, type } = contentArr[i];
+    if (type === 'paragraph') {
+      const pLen = paragraph.text.length;
+      // check if paragraph is too long
+      if (pLen >= MAX_PARAGRAPH_LENGTH) {
+        // compress all lines after MAX_PARAGRAPH_LENGTH
+        // into this block
+        const finalBlock = {
+          type: 'text',
+          annotations: {
+            bold: true,
+            strikethrough: false,
+            underline: false,
+            italic: true,
+            code: false,
+            color: 'default',
+          },
+          text: {
+            content: 'COMPRESSED: ',
+          },
+        };
+        paragraph.text.slice(MAX_PARAGRAPH_LENGTH).forEach((block) => {
+          finalBlock.text.content += block.text.content;
+        });
+
+        paragraph.text = [
+          ...paragraph.text.slice(0, MAX_PARAGRAPH_LENGTH),
+          finalBlock,
+        ];
+      }
+    }
+  }
+
+  return contentArr;
+}
+
 export async function addFeedItemToNotion(notionItem) {
   const { title, link, content } = notionItem;
 
@@ -164,10 +210,12 @@ export async function addFeedItemToNotion(notionItem) {
           url: link,
         },
       },
-      children: content,
+      children: compressContentIfTooLong(content),
     });
   } catch (err) {
     console.error(err);
+    console.log(`title: ${title}`);
+    console.log(`link: ${link}`);
   }
 
   console.log(`added ${title}`);
