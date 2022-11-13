@@ -7,6 +7,7 @@ import getNewFeedItems from './feed';
 import {
   addFeedItemToNotion,
   deleteOldUnreadFeedItemsFromNotion,
+  MAX_PARAGRAPH_LENGTH, //
 } from './notion';
 import htmlToNotionBlocks from './parser';
 
@@ -52,14 +53,13 @@ async function index() {
 
   for (let i = 0; i < feedItems.length; i++) {
     const item = feedItems[i];
-    console.log(`before reaching ${item.link}`);
+    console.log(`Processing ${item.link}`);
     const content = await getItemContent(item);
     const notionItem = {
       title: item.title,
       link: item.link,
       content: htmlToNotionBlocks(content),
     };
-    console.log(`after reaching ${item.link}`);
     await addFeedItemToNotion(notionItem);
   }
 }

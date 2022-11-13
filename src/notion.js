@@ -10,7 +10,7 @@ const {
   NOTION_FEEDS_DATABASE_ID,
   CI,
 } = process.env;
-const MAX_PARAGRAPH_LENGTH = 95;
+export const MAX_PARAGRAPH_LENGTH = 95;
 
 const logLevel = CI ? LogLevel.INFO : LogLevel.DEBUG;
 const notion = new Client({
@@ -103,7 +103,7 @@ export async function getFeedUrlsFromNotion() {
 
 // Get a list of existing articles from the reader DB
 export async function getExistingArticles() {
-  let cursor = undefined;
+  let cursor;
   let articles = [];
 
   while (true) {
@@ -114,7 +114,7 @@ export async function getExistingArticles() {
 
     articles = articles.concat(
       results.map((article) => {
-        let res = undefined;
+        let res;
         try {
           res = {
             title: article.properties.Title.title[0].plain_text,
@@ -140,76 +140,75 @@ export async function getExistingArticles() {
 
 // notion only allow a paragraph to have 100 line or less of text.
 // compress the lines beyong 95 to one single line if possible
-function compressContentIfTooLong(contentArr) {
-  if (!Array.isArray(contentArr)) {
-    throw new Error('Cannot redact content unless content is an array');
-  }
+function compressParagraphLineNumber(content) {
+  const { paragraph, type } = content;
+  if (type === 'paragraph') {
+    const pLen = paragraph.text.length;
+    // check if paragraph is too long
+    if (pLen >= MAX_PARAGRAPH_LENGTH) {
+      // compress all lines after MAX_PARAGRAPH_LENGTH
+      // into this block
+      const finalBlock = {
+        type: 'text',
+        annotations: {
+          bold: true,
+          strikethrough: false,
+          underline: false,
+          italic: true,
+          code: false,
+          color: 'default',
+        },
+        text: {
+          content: 'COMPRESSED: ',
+        },
+      };
+      paragraph.text.slice(MAX_PARAGRAPH_LENGTH).forEach((block) => {
+        finalBlock.text.content += block.text.content;
+      });
 
-  for (let i = 0; i < contentArr.length; i++) {
-    const { paragraph, type } = contentArr[i];
-    if (type === 'paragraph') {
-      const pLen = paragraph.text.length;
-      // check if paragraph is too long
-      if (pLen >= MAX_PARAGRAPH_LENGTH) {
-        // compress all lines after MAX_PARAGRAPH_LENGTH
-        // into this block
-        const finalBlock = {
-          type: 'text',
-          annotations: {
-            bold: true,
-            strikethrough: false,
-            underline: false,
-            italic: true,
-            code: false,
-            color: 'default',
-          },
-          text: {
-            content: 'COMPRESSED: ',
-          },
-        };
-        paragraph.text.slice(MAX_PARAGRAPH_LENGTH).forEach((block) => {
-          finalBlock.text.content += block.text.content;
-        });
-
-        paragraph.text = [
-          ...paragraph.text.slice(0, MAX_PARAGRAPH_LENGTH),
-          finalBlock,
-        ];
-      }
+      paragraph.text = [
+        ...paragraph.text.slice(0, MAX_PARAGRAPH_LENGTH),
+        finalBlock,
+      ];
     }
   }
-
-  return contentArr;
+  return content;
 }
 
-// each text block need to be less than 2000 characters long
-function ensureTextBlockSizeWithinlimit(contentArr) {
-  if (!Array.isArray(contentArr)) {
-    throw new Error('Cannot redact content unless content is an array');
-  }
+// return true if content is a paragraph and has undefined text
+// This is use to filter out undefined elements
+function isParagraphUndefined(content) {
+  const { paragraph, type } = content;
+  return type === 'paragraph' && paragraph.text === undefined;
+}
 
-  for (let i = 0; i < contentArr.length; i++) {
-    const { paragraph, type } = contentArr[i];
-    if (type === 'paragraph') {
-      paragraph.text.forEach((tb) => {
-        if (tb.text.content.length >= 2000) {
-          tb.text.content = tb.text.content.slice(0, 2000);
-        }
-      });
-    }
+// Truncate a paragraph to less than 2k char
+function truncateParagraph(content) {
+  const { paragraph, type } = content;
+  if (type === 'paragraph') {
+    paragraph.text.forEach((tb) => {
+      if (tb.text.content.length >= 2000) {
+        tb.text.content = tb.text.content.slice(0, 2000);
+      }
+    });
   }
-
-  return contentArr;
+  return content;
 }
 
 export async function addFeedItemToNotion(notionItem) {
   const { title, link, content } = notionItem;
 
+  // ensure contentArr is an array
+  if (!Array.isArray(content)) {
+    throw new Error(`>> Expecting ${content} to be an array but is not`);
+  }
+
+  const sanitizedContentArr = content
+    .filter((c) => !isParagraphUndefined(c))
+    .map(compressParagraphLineNumber)
+    .map(truncateParagraph);
+
   console.log(`adding article to Notion: ${title}: ${link}`);
-  const notion = new Client({
-    auth: NOTION_API_TOKEN,
-    logLevel,
-  });
 
   try {
     await notion.pages.create({
@@ -230,21 +229,16 @@ export async function addFeedItemToNotion(notionItem) {
           url: link,
         },
       },
-      children: ensureTextBlockSizeWithinlimit(
-        compressContentIfTooLong(content)
-      ),
+      children: sanitizedContentArr,
     });
+    console.log(`added ${title}`);
   } catch (err) {
+    console.log('========');
     console.error(err);
-    console.log(`title: ${title}`);
-    console.log(`link: ${link}`);
-    // TODO look into datadog to collect metrics on how many
-    // each error occures
-    // eg. {"object":"error","status":400,"code":"validation_error","message":"Number of blocks in the request exceeds limit of 1000."}
-    console.log(`error: ${err.message}`);
+    console.log(`>> title: ${title}`);
+    console.log(`>> link: ${link}`);
+    console.log(`>> error message: ${err.message}\n`);
   }
-
-  console.log(`added ${title}`);
 }
 
 export async function deleteOldUnreadFeedItemsFromNotion() {
