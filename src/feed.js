@@ -1,7 +1,7 @@
 import Parser from 'rss-parser';
+import dotenv from 'dotenv';
 import timeDifference from './helpers';
 import { getFeedUrlsFromNotion, getExistingArticles } from './notion';
-import dotenv from 'dotenv';
 
 dotenv.config();
 
@@ -56,13 +56,12 @@ function matchFeedFilter(feed, article) {
 }
 export default async function getNewFeedItems() {
   const existingArticles = await getExistingArticles();
-  console.log(
-    `Number of articles in the reader db: ${existingArticles.length}`
-  );
+  console.log(`${existingArticles.length} existing articles in reader`);
 
   const feeds = await getFeedUrlsFromNotion();
   let newArticles = [];
-  // go through each of the feeds and collect articles in
+
+  // go through each of the feeds to collect articles
   for (let i = 0; i < feeds.length; i++) {
     const feed = feeds[i];
     console.log(`Fetching from ${feed.feedUrl}`);
