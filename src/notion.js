@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
 import { Client, LogLevel } from '@notionhq/client';
 import * as fs from 'fs';
+import * as Sentry from '@sentry/node';
+import * as Tracing from '@sentry/tracing';
 
 dotenv.config();
 
@@ -8,11 +10,11 @@ const {
   NOTION_API_TOKEN,
   NOTION_READER_DATABASE_ID,
   NOTION_FEEDS_DATABASE_ID,
-  CI,
+  NODE_ENVIRONMENT,
 } = process.env;
 export const MAX_PARAGRAPH_LENGTH = 95;
 
-const logLevel = CI ? LogLevel.INFO : LogLevel.DEBUG;
+const logLevel = NODE_ENVIRONMENT === 'prod' ? LogLevel.INFO : LogLevel.DEBUG;
 const notion = new Client({
   auth: NOTION_API_TOKEN,
   logLevel,
@@ -195,22 +197,22 @@ function truncateParagraph(content) {
   return content;
 }
 
-export async function addFeedItemToNotion(notionItem) {
-  const { title, link, content } = notionItem;
-
-  // ensure contentArr is an array
-  if (!Array.isArray(content)) {
-    throw new Error(`>> Expecting ${content} to be an array but is not`);
-  }
-
-  const sanitizedContentArr = content
-    .filter((c) => !isParagraphUndefined(c))
-    .map(compressParagraphLineNumber)
-    .map(truncateParagraph);
-
-  console.log(`adding article to Notion: ${title}: ${link}`);
-
+export async function addFeedItemToNotion(transaction, notionItem) {
+  const addFeedItemToNotionSpan = transaction.startChild({
+    op: 'addFeedItemToNotion',
+    description: 'Create page in the notion database.',
+    tags: { articleUrl: notionItem.link },
+  });
   try {
+    const { title, link, content } = notionItem;
+
+    const sanitizedContentArr = content
+      .filter((c) => !isParagraphUndefined(c))
+      .map(compressParagraphLineNumber)
+      .map(truncateParagraph);
+
+    console.log(`adding article to Notion: ${title}: ${link}`);
+
     await notion.pages.create({
       parent: {
         database_id: NOTION_READER_DATABASE_ID,
@@ -232,13 +234,17 @@ export async function addFeedItemToNotion(notionItem) {
       children: sanitizedContentArr,
     });
     console.log(`added ${title}`);
+    addFeedItemToNotionSpan.setStatus(Tracing.SpanStatus.Ok);
   } catch (err) {
+    console.log('Caputure error to Sentry');
+    Sentry.captureException(err);
+    addFeedItemToNotionSpan.setStatus(Tracing.SpanStatus.InternalError);
     console.log('========');
     console.error(err);
-    console.log(`>> title: ${title}`);
-    console.log(`>> link: ${link}`);
+    console.log(`>> link: ${notionItem.link}`);
     console.log(`>> error message: ${err.message}\n`);
   }
+  addFeedItemToNotionSpan.finish();
 }
 
 export async function deleteOldUnreadFeedItemsFromNotion() {

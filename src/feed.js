@@ -1,5 +1,7 @@
 import Parser from 'rss-parser';
 import dotenv from 'dotenv';
+import * as Sentry from '@sentry/node';
+import * as Tracing from '@sentry/tracing';
 import timeDifference from './helpers';
 import { getFeedUrlsFromNotion, getExistingArticles } from './notion';
 
@@ -54,35 +56,57 @@ function matchFeedFilter(feed, article) {
     return match;
   });
 }
-export default async function getNewFeedItems() {
-  const existingArticles = await getExistingArticles();
-  console.log(`${existingArticles.length} existing articles in reader`);
+export default async function getNewFeedItems(transaction) {
+  const getExistingArticlesSpan = transaction.startChild({
+    op: 'getExistingArticles',
+    description: 'Get existing articles from notion db',
+  });
 
+  const existingArticles = await getExistingArticles();
+  console.log(`Found ${existingArticles.length} existing articles in Reader`);
+  getExistingArticlesSpan.finish();
+
+  const getFeedUrlsSpan = transaction.startChild({
+    op: 'getFeedUrls',
+    description: 'Get Feed URLs from Notion.',
+  });
   const feeds = await getFeedUrlsFromNotion();
-  let newArticles = [];
+  getFeedUrlsSpan.finish();
 
   // go through each of the feeds to collect articles
+  let newArticles = [];
   for (let i = 0; i < feeds.length; i++) {
     const feed = feeds[i];
     console.log(`Fetching from ${feed.feedUrl}`);
 
-    let feedItems = [];
+    const getArticleListFromFeedUrlSpan = transaction.startChild({
+      op: 'getArticleListFromFeedUrl',
+      description: 'get rss articles from feed',
+      tags: {
+        feedUrl: feed.feedUrl,
+      },
+    });
+
+    let articles = [];
     try {
-      feedItems = await getNewFeedArticlesFrom(
+      articles = await getNewFeedArticlesFrom(
         feed,
         NOTION_FEEDER_BACKFILL_DAYS
       );
-      console.log(`Number of articles in ${feed.feedUrl}: ${feedItems.length}`);
+      console.log(`Number of articles in ${feed.feedUrl}: ${articles.length}`);
 
-      feedItems = feedItems.filter((item) => matchFeedFilter(feed, item));
+      articles = articles.filter((item) => matchFeedFilter(feed, item));
       console.log(
-        `Number of articles meets the filter requirement: ${feedItems.length}`
+        `Number of articles meets the filter requirement: ${articles.length}`
       );
+      getArticleListFromFeedUrlSpan.setStatus(Tracing.SpanStatus.Ok);
     } catch (err) {
       console.error(`Error fetching ${feed.feedUrl} ${err}`);
-      feedItems = [];
+      articles = [];
+      getArticleListFromFeedUrlSpan.setStatus(Tracing.SpanStatus.InternalError);
     }
-    newArticles = [...newArticles, ...feedItems];
+    newArticles = [...newArticles, ...articles];
+    getArticleListFromFeedUrlSpan.finish();
   }
 
   // sort feed items by published date
