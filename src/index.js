@@ -10,7 +10,12 @@ import {
   deleteOldUnreadFeedItemsFromNotion,
   MAX_PARAGRAPH_LENGTH,
 } from './notion';
-import htmlToNotionBlocks from './parser';
+import {
+  htmlToNotionBlocks,
+  htmlToMarkdown,
+  markdownToNotionBlocks,
+  removeInvalidLinks,
+} from './parser';
 
 const { NODE_ENVIRONMENT, SENTRY_DSN } = process.env;
 const SENTRY_SAMPLING_RATE = parseFloat(process.env.SENTRY_SAMPLING_RATE, 0.2);
