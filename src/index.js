@@ -8,11 +8,12 @@ import getNewFeedItems from './feed';
 import {
   addFeedItemToNotion,
   deleteOldUnreadFeedItemsFromNotion,
-  MAX_PARAGRAPH_LENGTH, //
+  MAX_PARAGRAPH_LENGTH,
 } from './notion';
 import htmlToNotionBlocks from './parser';
 
-const { NODE_ENVIRONMENT } = process.env;
+const { NODE_ENVIRONMENT, SENTRY_DSN } = process.env;
+const SENTRY_SAMPLING_RATE = parseFloat(process.env.SENTRY_SAMPLING_RATE, 0.2);
 
 async function getRedableContent(html) {
   return new Promise((resolve, reject) => {
@@ -82,10 +83,19 @@ async function index() {
   transaction.finish();
 }
 
-const sentrySampleRate = NODE_ENVIRONMENT === 'prod' ? 0.2 : 1.0;
+if (NODE_ENVIRONMENT === 'prod') {
+  const sentrySampleRate = 0.2;
+  const dns =
+    'https://37a0b8c5e20d463f87f9400785956c85@o218963.ingest.sentry.io/6310207';
+} else {
+  const sentrySampleRate = 1.0;
+  const dsn =
+    'https://a9ee6052f3b14aff82e93fbd71b1b380@o218963.ingest.sentry.io/4504217751257088';
+}
+
 Sentry.init({
-  dsn: 'https://37a0b8c5e20d463f87f9400785956c85@o218963.ingest.sentry.io/6310207',
-  tracesSampleRate: sentrySampleRate,
+  dsn: SENTRY_DSN,
+  tracesSampleRate: SENTRY_SAMPLING_RATE,
 });
 
 index();
