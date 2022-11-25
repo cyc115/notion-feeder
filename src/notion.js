@@ -206,11 +206,18 @@ export async function addFeedItemToNotion(transaction, notionItem) {
   try {
     const { title, link, content } = notionItem;
 
-    const sanitizedContentArr = content
+    let sanitizedContentArr = content
       .filter((c) => !isParagraphUndefined(c))
       .map(compressParagraphLineNumber)
       .map(truncateParagraph);
 
+    // notion API fails to capture paragraphs so transform a paragraph to bullet list
+    sanitizedContentArr = JSON.parse(
+      JSON.stringify(sanitizedContentArr).replaceAll(
+        '"paragraph"',
+        '"bulleted_list_item"'
+      )
+    );
     console.log(`adding article to Notion: ${title}: ${link}`);
 
     const notionStatus = await notion.pages.create({

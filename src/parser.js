@@ -32,11 +32,6 @@ export function htmlToMarkdown(htmlContent) {
 
 export function htmlToNotionBlocks(htmlContent) {
   const markdown = htmlToMarkdown(htmlContent);
-  let blocks = markdownToBlocks(markdown);
-
-  // notion API fails to capture paragraphs so transform a paragraph to bullet list
-  blocks = JSON.parse(
-    JSON.stringify(blocks).replaceAll('"paragraph"', '"bulleted_list_item"')
-  );
+  const blocks = markdownToBlocks(markdown);
   return blocks;
 }
