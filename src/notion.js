@@ -213,8 +213,9 @@ export async function addFeedItemToNotion(transaction, notionItem) {
 
     console.log(`adding article to Notion: ${title}: ${link}`);
 
-    await notion.pages.create({
+    const notionStatus = await notion.pages.create({
       parent: {
+        type: 'database_id',
         database_id: NOTION_READER_DATABASE_ID,
       },
       properties: {
@@ -235,6 +236,7 @@ export async function addFeedItemToNotion(transaction, notionItem) {
     });
     console.log(`added ${title}`);
     addFeedItemToNotionSpan.setStatus(Tracing.SpanStatus.Ok);
+    addFeedItemToNotionSpan.setTag('notion-page-create-status', notionStatus);
   } catch (err) {
     console.log('Caputure error to Sentry');
     Sentry.captureException(err);

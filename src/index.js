@@ -1,6 +1,5 @@
 import got from 'got';
 import read from 'node-readability';
-
 import * as Sentry from '@sentry/node';
 import * as Tracing from '@sentry/tracing';
 
@@ -10,12 +9,7 @@ import {
   deleteOldUnreadFeedItemsFromNotion,
   MAX_PARAGRAPH_LENGTH,
 } from './notion';
-import {
-  htmlToNotionBlocks,
-  htmlToMarkdown,
-  markdownToNotionBlocks,
-  removeInvalidLinks,
-} from './parser';
+import { htmlToNotionBlocks, htmlToMarkdown } from './parser';
 
 const { NODE_ENVIRONMENT, SENTRY_DSN } = process.env;
 const SENTRY_SAMPLING_RATE = parseFloat(process.env.SENTRY_SAMPLING_RATE, 0.2);

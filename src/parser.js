@@ -1,37 +1,42 @@
 import { markdownToBlocks } from '@tryfabric/martian';
 import TurndownService from 'turndown';
 
-export function removeInvalidLinks(line) {
+// remove non-URI links because Notion create page will fail
+// if content contains links to heading, eg. [this is a link](#this-is-a-heading)
+export function fixRemoveInvalidLinks(line) {
   const invalidLinkRegex = /(.*)\[(.*)]\(#.*\)(.*)/;
   const group = invalidLinkRegex.exec(line);
 
-  // no invalid links
+  // remove invalid links
   if (!group) {
     return line;
   }
 
   const result = group.slice(1).reduce((prev, curr) => prev + curr, '');
-  return removeInvalidLinks(result);
+  return fixRemoveInvalidLinks(result);
 }
 
 export function htmlToMarkdown(htmlContent) {
   const turndownService = new TurndownService();
-  const md = turndownService.turndown(htmlContent);
+  let md = turndownService.turndown(htmlContent);
 
-  // Notion create page will fail if content contains links to heading, eg.
-  // [this is a link](#this-is-a-heading)
-  // remove invalid links
-  return md.split('\n')
-    .map((line) => removeInvalidLinks(line))
+  // Notion API has a lot of quirks...
+  // Apply transformation to mardown to improve page result
+  md = md
+    .split('\n')
+    .map((line) => fixRemoveInvalidLinks(line))
     .join('\n');
-}
 
-export function markdownToNotionBlocks(markdownContent) {
-  const md = markdownContent.split('\n').join('\n');
-  return markdownToBlocks(md);
+  return md;
 }
 
 export function htmlToNotionBlocks(htmlContent) {
   const markdown = htmlToMarkdown(htmlContent);
-  return markdownToNotionBlocks(markdown);
+  let blocks = markdownToBlocks(markdown);
+
+  // notion API fails to capture paragraphs so transform a paragraph to bullet list
+  blocks = JSON.parse(
+    JSON.stringify(blocks).replaceAll('"paragraph"', '"bulleted_list_item"')
+  );
+  return blocks;
 }
