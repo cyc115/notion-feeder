@@ -211,17 +211,16 @@ export async function addFeedItemToNotion(transaction, notionItem) {
     tags: { articleUrl: notionItem.link },
   });
   try {
-    const { title, link, content } = notionItem;
-
-    const sanitizedContentArr = content
-      .slice(0, MAX_PARAGRAPH_LENGTH) // remove content longer than 100 lines
+    let { title, link, content } = notionItem;
+    let sanitizedContentArr = content
+      .slice(0, MAX_PARAGRAPH_LENGTH) // remove content longer than 95 lines
       .filter((c) => !isParagraphUndefined(c))
       .map(compressParagraphLineNumber)
       .map(truncateParagraph);
 
-    console.log(`adding article to Notion: ${title}: ${link}`);
+    console.log(`Creating article in Notion: ${title}: ${link}`);
 
-    const notionStatus = await notion.pages.create({
+    let notionStatus = await notion.pages.create({
       parent: {
         type: 'database_id',
         database_id: NOTION_READER_DATABASE_ID,
@@ -243,6 +242,22 @@ export async function addFeedItemToNotion(transaction, notionItem) {
       children: sanitizedContentArr,
     });
     console.log(`added ${title}`);
+
+    content = content.slice(MAX_PARAGRAPH_LENGTH);
+    while (content.length > 0) {
+      sanitizedContentArr = content
+        .slice(0, MAX_PARAGRAPH_LENGTH) // remove content longer than 95 lines
+        .filter((c) => !isParagraphUndefined(c))
+        .map(compressParagraphLineNumber)
+        .map(truncateParagraph);
+      console.log(`Appending to article: ${title}: ${link}`);
+      notionStatus = await notion.blocks.children.append({
+        block_id: notionStatus.id,
+        children: sanitizedContentArr,
+      });
+      content = content.slice(MAX_PARAGRAPH_LENGTH);
+    }
+
     addFeedItemToNotionSpan.setStatus(Tracing.SpanStatus.Ok);
     addFeedItemToNotionSpan.setTag('notion-page-create-status', notionStatus);
   } catch (err) {
