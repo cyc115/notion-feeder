@@ -145,7 +145,7 @@ export async function getExistingArticles() {
 function compressParagraphLineNumber(content) {
   const { paragraph, type } = content;
   if (type === 'paragraph') {
-    const pLen = paragraph.text.length;
+    const pLen = paragraph.rich_text.length;
     // check if paragraph is too long
     if (pLen >= MAX_PARAGRAPH_LENGTH) {
       // compress all lines after MAX_PARAGRAPH_LENGTH
@@ -164,7 +164,7 @@ function compressParagraphLineNumber(content) {
           content: 'COMPRESSED: ',
         },
       };
-      paragraph.text.slice(MAX_PARAGRAPH_LENGTH).forEach((block) => {
+      paragraph.rich_text.slice(MAX_PARAGRAPH_LENGTH).forEach((block) => {
         finalBlock.text.content += block.text.content;
       });
 
@@ -181,14 +181,18 @@ function compressParagraphLineNumber(content) {
 // This is use to filter out undefined elements
 function isParagraphUndefined(content) {
   const { paragraph, type } = content;
-  return type === 'paragraph' && paragraph.text === undefined;
+  if (type === 'paragraph' && paragraph.rich_text === undefined) {
+    console.log(`paragraph undefined: ${JSON.stringify(content)}`);
+    return true;
+  }
+  return false;
 }
 
 // Truncate a paragraph to less than 2k char
 function truncateParagraph(content) {
   const { paragraph, type } = content;
   if (type === 'paragraph') {
-    paragraph.text.forEach((tb) => {
+    paragraph.rich_text.forEach((tb) => {
       if (tb.text.content.length >= 2000) {
         tb.text.content = tb.text.content.slice(0, 2000);
       }
