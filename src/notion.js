@@ -140,6 +140,23 @@ export async function getExistingArticles() {
   return articles;
 }
 
+function genTextBlock(message) {
+  return {
+    type: 'text',
+    annotations: {
+      bold: true,
+      strikethrough: false,
+      underline: false,
+      italic: true,
+      code: false,
+      color: 'default',
+    },
+    text: {
+      content: message,
+    },
+  };
+}
+
 // notion only allow a paragraph to have 100 line or less of text.
 // compress the lines beyong 95 to one single line if possible
 function compressParagraphLineNumber(content) {
@@ -148,22 +165,8 @@ function compressParagraphLineNumber(content) {
     const pLen = paragraph.rich_text.length;
     // check if paragraph is too long
     if (pLen >= MAX_PARAGRAPH_LENGTH) {
-      // compress all lines after MAX_PARAGRAPH_LENGTH
-      // into this block
-      const finalBlock = {
-        type: 'text',
-        annotations: {
-          bold: true,
-          strikethrough: false,
-          underline: false,
-          italic: true,
-          code: false,
-          color: 'default',
-        },
-        text: {
-          content: 'COMPRESSED: ',
-        },
-      };
+      // compress all lines after MAX_PARAGRAPH_LENGTH into this block
+      const finalBlock = genTextBlock('Content truncated:');
       paragraph.rich_text.slice(MAX_PARAGRAPH_LENGTH).forEach((block) => {
         finalBlock.text.content += block.text.content;
       });
@@ -211,6 +214,7 @@ export async function addFeedItemToNotion(transaction, notionItem) {
     const { title, link, content } = notionItem;
 
     const sanitizedContentArr = content
+      .slice(0, MAX_PARAGRAPH_LENGTH) // remove content longer than 100 lines
       .filter((c) => !isParagraphUndefined(c))
       .map(compressParagraphLineNumber)
       .map(truncateParagraph);
