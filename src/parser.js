@@ -4,7 +4,7 @@ import TurndownService from 'turndown';
 // remove non-URI links because Notion create page will fail
 // if content contains links to heading, eg. [this is a link](#this-is-a-heading)
 export function fixRemoveInvalidLinks(line) {
-  const invalidLinkRegex = /(.*)\[(.*)]\(#.*\)(.*)/;
+  const invalidLinkRegex = /(.*)\[(.*)]\(((?!http).)*\)(.*)/;
   const group = invalidLinkRegex.exec(line);
 
   // remove invalid links
