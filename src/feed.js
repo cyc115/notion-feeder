@@ -1,7 +1,5 @@
 import Parser from 'rss-parser';
 import dotenv from 'dotenv';
-import * as Sentry from '@sentry/node';
-import * as Tracing from '@sentry/tracing';
 import timeDifference from './helpers';
 import { getFeedUrlsFromNotion, getExistingArticles } from './notion';
 
@@ -56,36 +54,17 @@ function matchFeedFilter(feed, article) {
     return match;
   });
 }
-export default async function getNewFeedItems(transaction) {
-  const getExistingArticlesSpan = transaction.startChild({
-    op: 'getExistingArticles',
-    description: 'Get existing articles from notion db',
-  });
-
+export default async function getNewFeedItems() {
   const existingArticles = await getExistingArticles();
   console.log(`Found ${existingArticles.length} existing articles in Reader`);
-  getExistingArticlesSpan.finish();
 
-  const getFeedUrlsSpan = transaction.startChild({
-    op: 'getFeedUrls',
-    description: 'Get Feed URLs from Notion.',
-  });
   const feeds = await getFeedUrlsFromNotion();
-  getFeedUrlsSpan.finish();
 
   // go through each of the feeds to collect articles
   let newArticles = [];
   for (let i = 0; i < feeds.length; i++) {
     const feed = feeds[i];
     console.log(`Fetching from ${feed.feedUrl}`);
-
-    const getArticleListFromFeedUrlSpan = transaction.startChild({
-      op: 'getArticleListFromFeedUrl',
-      description: 'get rss articles from feed',
-      tags: {
-        feedUrl: feed.feedUrl,
-      },
-    });
 
     let articles = [];
     try {
@@ -99,14 +78,11 @@ export default async function getNewFeedItems(transaction) {
       console.log(
         `Number of articles meets the filter requirement: ${articles.length}`
       );
-      getArticleListFromFeedUrlSpan.setStatus(Tracing.SpanStatus.Ok);
     } catch (err) {
       console.error(`Error fetching ${feed.feedUrl} ${err}`);
       articles = [];
-      getArticleListFromFeedUrlSpan.setStatus(Tracing.SpanStatus.InternalError);
     }
     newArticles = [...newArticles, ...articles];
-    getArticleListFromFeedUrlSpan.finish();
   }
 
   // sort feed items by published date

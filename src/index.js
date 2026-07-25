@@ -1,18 +1,9 @@
 import got from 'got';
 import read from 'node-readability';
-import * as Sentry from '@sentry/node';
-import * as Tracing from '@sentry/tracing';
 
 import getNewFeedItems from './feed';
-import {
-  addFeedItemToNotion,
-  deleteOldUnreadFeedItemsFromNotion,
-  MAX_PARAGRAPH_LENGTH,
-} from './notion';
-import { htmlToNotionBlocks, htmlToMarkdown } from './parser';
-
-const { NODE_ENVIRONMENT, SENTRY_DSN } = process.env;
-const SENTRY_SAMPLING_RATE = parseFloat(process.env.SENTRY_SAMPLING_RATE, 0.2);
+import { addFeedItemToNotion, getFailureCount } from './notion';
+import { htmlToNotionBlocks } from './parser';
 
 async function getRedableContent(html) {
   return new Promise((resolve, reject) => {
@@ -52,23 +43,12 @@ async function getItemContent(item) {
 }
 
 async function index() {
-  const transaction = Sentry.startTransaction({
-    name: 'feeder-main-transaction',
-  });
-  Sentry.getCurrentHub().configureScope((scope) => scope.setSpan(transaction));
-
-  const feedItems = await getNewFeedItems(transaction);
+  const feedItems = await getNewFeedItems();
 
   for (let i = 0; i < feedItems.length; i++) {
     const item = feedItems[i];
-    const getNewFeedSpan = transaction.startChild({
-      op: 'getNewFeedItems',
-      description: 'Get full text article from source.',
-      tags: { articleUrl: item.link },
-    });
     console.log(`Processing ${item.link}`);
     const content = await getItemContent(item);
-    getNewFeedSpan.finish();
 
     const notionItem = {
       title: item.title,
@@ -76,25 +56,32 @@ async function index() {
       content: htmlToNotionBlocks(content),
     };
 
-    await addFeedItemToNotion(transaction, notionItem);
+    await addFeedItemToNotion(notionItem);
   }
 
-  transaction.finish();
+  // Surface per-article failures as a non-zero exit so a failing run is
+  // visible in `systemctl status` / `journalctl` instead of silently exiting 0.
+  const failures = getFailureCount();
+  console.log(
+    `Run complete: ${feedItems.length} item(s) processed, ${failures} failed.`
+  );
+  return failures > 0 ? 1 : 0;
 }
 
-if (NODE_ENVIRONMENT === 'prod') {
-  const sentrySampleRate = 0.2;
-  const dns =
-    'https://37a0b8c5e20d463f87f9400785956c85@o218963.ingest.sentry.io/6310207';
-} else {
-  const sentrySampleRate = 1.0;
-  const dsn =
-    'https://a9ee6052f3b14aff82e93fbd71b1b380@o218963.ingest.sentry.io/4504217751257088';
-}
-
-Sentry.init({
-  dsn: SENTRY_DSN,
-  tracesSampleRate: SENTRY_SAMPLING_RATE,
-});
-
-index();
+index()
+  .catch((err) => {
+    console.error('Fatal error:', err);
+    return 1;
+  })
+  .then(async (code) => {
+    // Exit explicitly. jsdom (via node-readability) and got's keep-alive
+    // sockets leave handles open, so the event loop never drains on its own —
+    // the process hung indefinitely after finishing its work, which left the
+    // container Up and the systemd oneshot stuck in "activating" until
+    // TimeoutStartSec. Brief pause first because process.stdout is async when
+    // it's a pipe (journald), and process.exit() would truncate the last lines.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 250);
+    });
+    process.exit(code);
+  });

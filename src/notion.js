@@ -1,8 +1,6 @@
 import dotenv from 'dotenv';
 import { Client, LogLevel } from '@notionhq/client';
 import * as fs from 'fs';
-import * as Sentry from '@sentry/node';
-import * as Tracing from '@sentry/tracing';
 
 dotenv.config();
 
@@ -13,6 +11,14 @@ const {
   NODE_ENVIRONMENT,
 } = process.env;
 export const MAX_PARAGRAPH_LENGTH = 95;
+
+// Per-article failures are caught and logged so one bad article doesn't abort
+// the whole run, but they must still surface: without this the process always
+// exited 0 and a wholly failing run looked green in journalctl.
+let failureCount = 0;
+export function getFailureCount() {
+  return failureCount;
+}
 
 const logLevel = NODE_ENVIRONMENT === 'prod' ? LogLevel.INFO : LogLevel.DEBUG;
 const notion = new Client({
@@ -168,11 +174,19 @@ function compressParagraphLineNumber(content) {
       // compress all lines after MAX_PARAGRAPH_LENGTH into this block
       const finalBlock = genTextBlock('Content truncated:');
       paragraph.rich_text.slice(MAX_PARAGRAPH_LENGTH).forEach((block) => {
-        finalBlock.text.content += block.text.content;
+        // Same non-text rich_text hazard as truncateParagraph — skip anything
+        // that isn't a plain text run rather than dereferencing .text.content.
+        if (isTextRun(block)) {
+          finalBlock.text.content += block.text.content;
+        }
       });
 
-      paragraph.text = [
-        ...paragraph.text.slice(0, MAX_PARAGRAPH_LENGTH),
+      // Read and write the same field: martian emits `rich_text`, and the
+      // Notion API expects it. Writing `paragraph.text` left rich_text
+      // uncompressed (so the >100-run limit still tripped) and threw a
+      // TypeError reading `paragraph.text.slice` of undefined.
+      paragraph.rich_text = [
+        ...paragraph.rich_text.slice(0, MAX_PARAGRAPH_LENGTH),
         finalBlock,
       ];
     }
@@ -192,11 +206,19 @@ function isParagraphUndefined(content) {
 }
 
 // Truncate a paragraph to less than 2k char
+// A rich_text array is not uniformly text: martian also emits `equation` and
+// `mention` entries, which have no `.text` member. Assuming `.text` threw
+// "Cannot read properties of undefined (reading 'content')" and lost the whole
+// article (3 of 7 items on the first services-VM run).
+function isTextRun(tb) {
+  return tb && tb.type === 'text' && tb.text && typeof tb.text.content === 'string';
+}
+
 function truncateParagraph(content) {
   const { paragraph, type } = content;
-  if (type === 'paragraph') {
+  if (type === 'paragraph' && Array.isArray(paragraph?.rich_text)) {
     paragraph.rich_text.forEach((tb) => {
-      if (tb.text.content.length >= 2000) {
+      if (isTextRun(tb) && tb.text.content.length >= 2000) {
         tb.text.content = tb.text.content.slice(0, 2000);
       }
     });
@@ -204,12 +226,7 @@ function truncateParagraph(content) {
   return content;
 }
 
-export async function addFeedItemToNotion(transaction, notionItem) {
-  const addFeedItemToNotionSpan = transaction.startChild({
-    op: 'addFeedItemToNotion',
-    description: 'Create page in the notion database.',
-    tags: { articleUrl: notionItem.link },
-  });
+export async function addFeedItemToNotion(notionItem) {
   try {
     let { title, link, content } = notionItem;
     let sanitizedContentArr = content
@@ -220,7 +237,7 @@ export async function addFeedItemToNotion(transaction, notionItem) {
 
     console.log(`Creating article in Notion: ${title}: ${link}`);
 
-    let notionStatus = await notion.pages.create({
+    const createdPage = await notion.pages.create({
       parent: {
         type: 'database_id',
         database_id: NOTION_READER_DATABASE_ID,
@@ -243,6 +260,13 @@ export async function addFeedItemToNotion(transaction, notionItem) {
     });
     console.log(`added ${title}`);
 
+    // Append remaining blocks to the page we just created. Note that
+    // blocks.children.append() returns a *list* response ({object: 'list',
+    // results: [...]}), not a block — so its `.id` is undefined. Appending to
+    // the id of the previous append response therefore failed with
+    // `path.block_id should be a valid uuid, instead was "undefined"` on the
+    // second and later chunks. Always append to the created page's id.
+    const pageId = createdPage.id;
     content = content.slice(MAX_PARAGRAPH_LENGTH);
     while (content.length > 0) {
       sanitizedContentArr = content
@@ -251,25 +275,19 @@ export async function addFeedItemToNotion(transaction, notionItem) {
         .map(compressParagraphLineNumber)
         .map(truncateParagraph);
       console.log(`Appending to article: ${title}: ${link}`);
-      notionStatus = await notion.blocks.children.append({
-        block_id: notionStatus.id,
+      await notion.blocks.children.append({
+        block_id: pageId,
         children: sanitizedContentArr,
       });
       content = content.slice(MAX_PARAGRAPH_LENGTH);
     }
-
-    addFeedItemToNotionSpan.setStatus(Tracing.SpanStatus.Ok);
-    addFeedItemToNotionSpan.setTag('notion-page-create-status', notionStatus);
   } catch (err) {
-    console.log('Caputure error to Sentry');
-    Sentry.captureException(err);
-    addFeedItemToNotionSpan.setStatus(Tracing.SpanStatus.InternalError);
     console.log('========');
     console.error(err);
     console.log(`>> link: ${notionItem.link}`);
     console.log(`>> error message: ${err.message}\n`);
+    failureCount += 1;
   }
-  addFeedItemToNotionSpan.finish();
 }
 
 export async function deleteOldUnreadFeedItemsFromNotion() {
