@@ -1,15 +1,68 @@
 import Parser from 'rss-parser';
 import dotenv from 'dotenv';
+import got from 'got';
 import timeDifference from './helpers';
 import { getFeedUrlsFromNotion, getExistingArticles } from './notion';
+import { repairXml, looksLikeHtml } from './xml';
 
 dotenv.config();
 
 const { NOTION_FEEDER_MAX_ITEMS, NOTION_FEEDER_BACKFILL_DAYS } = process.env;
 
-async function getNewFeedArticlesFrom(feed, daysToBackfill = 1) {
+// Parse a feed. On success this is exactly the call it has always been; the
+// diagnosis and repair below are reachable only once a strict parse has already
+// failed, so a healthy feed's bytes still reach rss-parser untouched.
+//
+// Two things happen on failure, in this order:
+//
+//  1. Say what actually went wrong. A retired feed is almost never a 404 — the
+//     publisher 30x's it to a marketing page, rss-parser reads HTML, trips on
+//     the first bare `&` in some inline CSS, and reports "Invalid character in
+//     entity name". That message sent four days of investigation after the
+//     wrong thing. Naming the content type and the URL the redirect landed on
+//     turns it into a one-line diagnosis.
+//  2. Only then, try repairing genuinely malformed XML. Publishers do ship
+//     unescaped ampersands, and losing a real publisher to one stray `&` is
+//     worse than the cost of a second fetch.
+async function parseFeed(feedUrl) {
   const parser = new Parser();
-  const rss = await parser.parseURL(feed.feedUrl);
+  try {
+    return await parser.parseURL(feedUrl);
+  } catch (strictError) {
+    let response;
+    try {
+      response = await got.get(feedUrl, { timeout: { request: 60000 } });
+    } catch {
+      // The refetch failed too, so the original problem was not the document.
+      // Report the parse error the caller actually needs to see.
+      throw strictError;
+    }
+
+    const raw = response.body;
+    const finalUrl = response.url;
+    if (looksLikeHtml(response.headers['content-type'], raw)) {
+      const via = finalUrl && finalUrl !== feedUrl ? ` (redirected to ${finalUrl})` : '';
+      throw new Error(
+        `not a feed: served ${response.headers['content-type'] || 'HTML'}${via}` +
+          ` — the feed has probably been retired; check for a new URL or disable it`
+      );
+    }
+
+    const repaired = repairXml(raw);
+    if (repaired === raw) {
+      // Nothing this knows how to repair. Do not disguise that as some other
+      // failure — surface the parser's own complaint.
+      throw strictError;
+    }
+
+    const parsed = await parser.parseString(repaired);
+    console.log(`Repaired malformed XML from ${feedUrl} (unescaped ampersands)`);
+    return parsed;
+  }
+}
+
+async function getNewFeedArticlesFrom(feed, daysToBackfill = 1) {
+  const rss = await parseFeed(feed.feedUrl);
   const todaysDate = new Date().getTime() / 1000;
 
   // only select the articles that more recent than daysToBackfill
