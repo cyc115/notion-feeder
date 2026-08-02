@@ -7,7 +7,17 @@ import { repairXml, looksLikeHtml } from './xml.js';
 
 dotenv.config();
 
-const { NOTION_FEEDER_MAX_ITEMS, NOTION_FEEDER_BACKFILL_DAYS } = process.env;
+const {
+  NOTION_FEEDER_MAX_ITEMS,
+  NOTION_FEEDER_BACKFILL_DAYS,
+  NOTION_FEEDER_FEED_TIMEOUT_MS,
+} = process.env;
+
+// rss-parser's own default is 60000ms (verified 2026-08-02). On 2026-08-01 a
+// single slow host (kill-the-newsletter.com) spent 60s of a 137s run doing
+// nothing. Both the strict parse and the repair-path refetch honour this so
+// a broken feed cannot stall the run for longer than one configured timeout.
+const FEED_TIMEOUT_MS = Number(NOTION_FEEDER_FEED_TIMEOUT_MS) || 20000;
 
 // Parse a feed. On success this is exactly the call it has always been; the
 // diagnosis and repair below are reachable only once a strict parse has already
@@ -25,13 +35,13 @@ const { NOTION_FEEDER_MAX_ITEMS, NOTION_FEEDER_BACKFILL_DAYS } = process.env;
 //     unescaped ampersands, and losing a real publisher to one stray `&` is
 //     worse than the cost of a second fetch.
 async function parseFeed(feedUrl) {
-  const parser = new Parser();
+  const parser = new Parser({ timeout: FEED_TIMEOUT_MS });
   try {
     return await parser.parseURL(feedUrl);
   } catch (strictError) {
     let response;
     try {
-      response = await got.get(feedUrl, { timeout: { request: 60000 } });
+      response = await got.get(feedUrl, { timeout: { request: FEED_TIMEOUT_MS } });
     } catch {
       // The refetch failed too, so the original problem was not the document.
       // Report the parse error the caller actually needs to see.
