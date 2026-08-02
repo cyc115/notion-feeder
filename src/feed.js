@@ -84,6 +84,22 @@ async function getNewFeedArticlesFrom(feed, daysToBackfill = 1) {
   return items.slice(0, NOTION_FEEDER_MAX_ITEMS);
 }
 
+// Drop articles already present in `existingUrls`, and add each newly-kept
+// article's URL to the set so duplicates WITHIN a single run are also caught
+// (two feeds occasionally syndicate the same story at the same link).
+// Mutates `existingUrls`; returns the deduplicated array.
+export function dedupeAgainst(existingUrls, articles) {
+  return articles.filter((item) => {
+    const isDup = existingUrls.has(item.link);
+    if (isDup) {
+      console.log(`Remove duplicated article: ${item.title}`);
+    } else {
+      existingUrls.add(item.link);
+    }
+    return !isDup;
+  });
+}
+
 // return true if any of the feed filter matches the article
 // otherwise return false
 function matchFeedFilter(feed, article) {
@@ -149,20 +165,8 @@ export default async function getNewFeedItems() {
   // sort feed items by published date
   newArticles.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
 
-  // Do not add items already in existingArticles
-  newArticles = newArticles.filter((item) => {
-    const isDup = !!existingArticles.find((a) => a.url === item.link);
-    if (isDup) {
-      console.log(`Remove duplicated article: ${item.title}`);
-    } else {
-      // Add the current article to dup list
-      existingArticles.push({
-        url: item.link,
-      });
-    }
-
-    return !isDup;
-  });
+  const existingUrls = new Set(existingArticles.map((a) => a.url));
+  newArticles = dedupeAgainst(existingUrls, newArticles);
 
   console.log(`Total new articles: ${newArticles.length}`);
   return newArticles;
