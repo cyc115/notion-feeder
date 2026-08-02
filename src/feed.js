@@ -110,6 +110,49 @@ export function dedupeAgainst(existingUrls, articles) {
   });
 }
 
+// Bounded-concurrency map: run `fn` over `items` with at most `limit` calls
+// in flight at once. No dependency (the `async` package was removed in
+// Task 1) -- a worker pool over a shared cursor is ~10 lines. Exported only
+// for the ordering/concurrency-cap unit tests in test/concurrency.test.js.
+export async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
+
+const FEED_FETCH_CONCURRENCY = 6;
+
+// One feed's full fetch-and-filter cycle. Extracted so it can run inside the
+// concurrency pool below; the per-feed try/catch is unchanged from the
+// sequential version, so one failing host still cannot abort the run, and
+// the "Fetching from"/"Error fetching <url> <err>" log lines are unchanged --
+// the operator runbook and Task 7's health writeback both key off them.
+async function fetchFeedArticles(feed) {
+  console.log(`Fetching from ${feed.feedUrl}`);
+  try {
+    let articles = await getNewFeedArticlesFrom(feed, NOTION_FEEDER_BACKFILL_DAYS);
+    console.log(`Number of articles in ${feed.feedUrl}: ${articles.length}`);
+
+    articles = articles.filter((item) => matchFeedFilter(feed, item));
+    console.log(
+      `Number of articles meets the filter requirement: ${articles.length}`
+    );
+    return articles;
+  } catch (err) {
+    console.error(`Error fetching ${feed.feedUrl} ${err}`);
+    return [];
+  }
+}
+
 // return true if any of the feed filter matches the article
 // otherwise return false
 function matchFeedFilter(feed, article) {
@@ -147,30 +190,16 @@ export default async function getNewFeedItems() {
 
   const feeds = await getFeedUrlsFromNotion();
 
-  // go through each of the feeds to collect articles
-  let newArticles = [];
-  for (let i = 0; i < feeds.length; i++) {
-    const feed = feeds[i];
-    console.log(`Fetching from ${feed.feedUrl}`);
-
-    let articles = [];
-    try {
-      articles = await getNewFeedArticlesFrom(
-        feed,
-        NOTION_FEEDER_BACKFILL_DAYS
-      );
-      console.log(`Number of articles in ${feed.feedUrl}: ${articles.length}`);
-
-      articles = articles.filter((item) => matchFeedFilter(feed, item));
-      console.log(
-        `Number of articles meets the filter requirement: ${articles.length}`
-      );
-    } catch (err) {
-      console.error(`Error fetching ${feed.feedUrl} ${err}`);
-      articles = [];
-    }
-    newArticles = [...newArticles, ...articles];
-  }
+  // Fetch feeds with bounded concurrency (56 feeds strictly sequential cost
+  // 95s of a 137s baseline run). Ordering is independent of fetch order --
+  // the explicit sort right below applies after every feed has resolved --
+  // so running them out of order cannot change the final result.
+  const perFeedArticles = await mapWithConcurrency(
+    feeds,
+    FEED_FETCH_CONCURRENCY,
+    fetchFeedArticles
+  );
+  let newArticles = perFeedArticles.flat();
 
   // sort feed items by published date
   newArticles.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
