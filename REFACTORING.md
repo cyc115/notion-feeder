@@ -41,7 +41,7 @@ Baseline run, 2026-08-01 23:52:25 → 23:54:42 UTC — **137 s total**, 56 enabl
 | 5 | Dedup is O(N×M): a linear `.find()` over the existing-articles array, per new item | `src/feed.js` `newArticles.filter(... existingArticles.find(...))` | Medium |
 | 6 | **Four unused dependencies**, including `http@0.0.1-security` — a placeholder package squatting the name, not a real module | `grep` for each dep in `src/`: `async`, `http`, `icecream`, `node-icecream` all unreferenced | Medium — supply chain |
 | 7 | Feeds are fetched **strictly sequentially** with a 60 s timeout each. One hung host stalls the whole run | 56 feeds in 95 s; `kill-the-newsletter` alone contributed a 60 s timeout on 2026-08-01 | Medium |
-| 8 | **Dead feeds are invisible.** A feed can 404 for months and nothing surfaces it; the run still exits 0 | 5 dead feeds found only by reading logs by hand. The feeds DB already has an unused `Parse quality` property | Medium |
+| 8 | **Dead feeds are invisible.** A feed can 404 for months and nothing surfaces it; the run still exits 0 | 5 dead feeds found only by reading logs by hand; the run still exits 0. No machine-writable health field exists — `Parse quality` and `Notes` are both human-owned | Medium |
 | 9 | `MAX_PARAGRAPH_LENGTH = 95` is used for **two unrelated Notion limits** — rich-text runs per paragraph (limit 100) and child blocks per request (limit 100) | `src/notion.js` line 173 vs. 233 | Low |
 | 10 | `node-readability` is unmaintained: pulls `jsdom` and the deprecated `request`. It is the reason `index.js` needs an explicit `process.exit()` to terminate | 3 webpack `Critical dependency` warnings; the comment in `src/index.js` | Medium |
 | 11 | Every log line is **written to journald twice**, by `conmon` and by `podman` | `journalctl -o json` grouped by `_COMM`: 1035 lines each, identical | Low — ops, not code |
@@ -105,9 +105,10 @@ Findings #1, #2, #3, #5. Ship these three steps together only if you want; they 
 - **Risk:** ordering. The code sorts by `pubDate` afterwards, so concurrency must not change the final set — assert that explicitly.
 
 #### Step 3.3 — Write feed health back to Notion
-- **Change:** on fetch failure, write the reason and a UTC timestamp to the feed row's existing `Parse quality` property. On success, clear it.
-- **Why:** finding #8. Five feeds were dead — two for long enough that the publisher had rebuilt their site — and the only way to discover this was reading four days of logs by hand. The schema already has the field.
-- **Verify:** disable a feed's host (or point a test row at `http://127.0.0.1:1/rss`), run, confirm the property is populated; restore, run, confirm it clears.
+- **Change:** add two properties to the feeds DB — `Fetch status` (select: `OK`/`Failing`) and `Last fetch error` (rich_text) — and write them per feed per run.
+- **Do NOT reuse `Parse quality` or `Notes`.** Inspected 2026-08-02: `Parse quality` is a select (`Excellent`/`poor`) carrying a human judgement about *content* quality on 3 of 65 rows; `Notes` holds hand-written prose on 7. Writing either from code would destroy something a person put there. Adding a property is non-destructive; repurposing one is not.
+- **Why:** finding #8. Five feeds were dead — two for long enough that the publisher had rebuilt their site — and the only way to discover this was reading four days of logs by hand.
+- **Verify:** capture `Parse quality` and `Notes` for all rows before and after a full run and diff — they must be byte-identical. Then point a scratch row at `http://127.0.0.1:1/rss`, run, confirm `Fetch status = Failing`; repoint at a good feed, run, confirm it flips to `OK`.
 - **Consider:** a consecutive-failure counter, auto-unchecking `Enabled` after N runs. Design it so it can never disable a feed on a transient error.
 
 ### Phase 4 — Dependency modernization
@@ -138,7 +139,7 @@ Findings #1, #2, #3, #5. Ship these three steps together only if you want; they 
 
 - **Removing webpack.** Measured and rejected: it produces a 5.7 MB single-file bundle and keeps `node_modules` out of the 173 MB runtime image.
 - **Rewriting in TypeScript.** Not justified at 670 lines; Phase 1's test harness buys most of the same confidence for far less churn.
-- **Changing the Notion schema.** Phase 3.3 uses the `Parse quality` property that already exists.
+- **Repurposing existing Notion properties.** `Parse quality` and `Notes` are human-owned, so Phase 3.3 adds two new fields rather than overwriting either.
 - **Feed curation.** Which feeds to keep is a content decision, not a refactor.
 
 ---
