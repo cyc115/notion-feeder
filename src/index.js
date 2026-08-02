@@ -1,9 +1,9 @@
 import got from 'got';
 import read from 'node-readability';
 
-import getNewFeedItems from './feed';
-import { addFeedItemToNotion, getFailureCount } from './notion';
-import { htmlToNotionBlocks } from './parser';
+import getNewFeedItems from './feed.js';
+import { addFeedItemToNotion, getFailureCount } from './notion.js';
+import { htmlToNotionBlocks } from './parser.js';
 
 async function getRedableContent(html) {
   return new Promise((resolve, reject) => {

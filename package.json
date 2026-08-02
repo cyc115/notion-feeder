@@ -2,6 +2,7 @@
   "name": "notion-feed-reader",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "A Node app for creating a Feed Reader in Notion.",
   "keywords": [
     "notion",
@@ -15,7 +16,8 @@
     "develop": "webpack --watch",
     "feed": "node dist/index.js",
     "build-prod": "webpack --env mode='production'",
-    "container-build": "podman build -t notion-feeder:local ."
+    "container-build": "podman build -t notion-feeder:local .",
+    "test": "node --test"
   },
   "author": "Ravgeet Dhillon <ravgeetdhillon@gmail.com>",
   "license": "MIT",

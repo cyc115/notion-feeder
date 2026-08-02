@@ -1,9 +1,9 @@
 import Parser from 'rss-parser';
 import dotenv from 'dotenv';
 import got from 'got';
-import timeDifference from './helpers';
-import { getFeedUrlsFromNotion, getExistingArticles } from './notion';
-import { repairXml, looksLikeHtml } from './xml';
+import timeDifference from './helpers.js';
+import { getFeedUrlsFromNotion, getExistingArticles } from './notion.js';
+import { repairXml, looksLikeHtml } from './xml.js';
 
 dotenv.config();
 
