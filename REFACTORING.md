@@ -36,7 +36,7 @@ Baseline run, 2026-08-01 23:52:25 → 23:54:42 UTC — **137 s total**, 56 enabl
 |---|---|---|---|
 | 1 | **Dedup is silently truncated.** `getExistingArticles()` pages the reader DB unfiltered and stops at exactly 10,000 rows with `has_more: false` | 100 pages × 100 rows; a `Created At <= now-30d` filter *also* returns exactly 10,000, while `>= now-14d` returns 434 — mutually inconsistent unless 10,000 is a ceiling | **High — correctness** |
 | 2 | That scan costs **42 s and 100 API round-trips on every run**, before a single feed is fetched, and grows with the DB | timings above; filtered to 14 days the same query is **434 rows, 5 round-trips, 2.4 s** | **High** |
-| 3 | **`deleteOldUnreadFeedItemsFromNotion()` is never called.** The reader DB has no bound at all | `grep -rn deleteOldUnreadFeedItemsFromNotion src/` → one hit, its own definition | **High** |
+| 3 | **`deleteOldUnreadFeedItemsFromNotion()` is never called**, so the reader DB is unbounded | `grep -rn deleteOldUnreadFeedItemsFromNotion src/` → one hit, its own definition | **Accepted** — owner declined cleanup 2026-08-02; #1/#2 are fixed by bounding the query instead (Step 2.1), not the database |
 | 4 | **No tests exist.** No `test` script, no test directory, no framework | `package.json` scripts: `develop`, `feed`, `build-prod`, `container-build` | **High — blocks safe change** |
 | 5 | Dedup is O(N×M): a linear `.find()` over the existing-articles array, per new item | `src/feed.js` `newArticles.filter(... existingArticles.find(...))` | Medium |
 | 6 | **Four unused dependencies**, including `http@0.0.1-security` — a placeholder package squatting the name, not a real module | `grep` for each dep in `src/`: `async`, `http`, `icecream`, `node-icecream` all unreferenced | Medium — supply chain |
@@ -86,8 +86,10 @@ Findings #1, #2, #3, #5. Ship these three steps together only if you want; they 
 - **Verify:** covered by the Step 2.1 double-run assertion; add a unit test now that Phase 1 makes that possible.
 - **Rollback:** revert.
 
-#### Step 2.3 — Actually call the retention cleanup
-- **Change:** call `deleteOldUnreadFeedItemsFromNotion()` from `index()` after the sync completes.
+#### Step 2.3 — Retention cleanup: DECLINED 2026-08-02
+- **Decision:** the repo owner has said to leave the 10,000+ rows in place. Do not call
+  `deleteOldUnreadFeedItemsFromNotion()`, and do not delete it either — it stays defined and uncalled on purpose.
+- **Not a blocker.** Step 2.1 bounds the *query* by date rather than bounding the *database* by deletion, which is exactly why it was designed that way. The reader DB can grow without limit and the sync still reads only the backfill window.
 - **Do this deliberately, not blindly.** It archives every unread row older than 30 days, and the current backlog is **at least 10,000 rows** — one run would archive all of them. Notion archive is recoverable (trash, 30 days), but this is still a bulk mutation of real data. Confirm the retention policy is wanted before enabling, and consider a first run with an explicit cap.
 - **Also fix:** its query is unpaginated, so it only ever sees the first 100 matches. Paginate it, or accept that it drains 100 per run — which, at 10,000+ backlog, is a gentler rollout and may be preferable.
 - **Verify:** count rows before and after; confirm the count drops by exactly the number archived and that no *read* rows were touched.
@@ -146,6 +148,6 @@ Findings #1, #2, #3, #5. Ship these three steps together only if you want; they 
 
 ## Open questions
 
-1. **Is the 30-day unread retention actually wanted?** Step 2.3 hinges on it, and the backlog is 10,000+ rows. The function has existed, uncalled, since before this deployment — it may have been disabled on purpose.
-2. **Is the 10,000 ceiling Notion's or the integration's?** The evidence is strong but circumstantial (`has_more: false` on a perfectly full 100th page, plus the contradictory filtered counts). Step 2.1 makes it moot rather than answering it. Worth confirming against Notion's API docs before relying on any other unbounded query.
-3. **How far beyond 10,000 has the reader DB actually grown?** Unknown, and unknowable through the paginated query. A filtered count per month would establish it.
+1. ~~Is the 30-day unread retention actually wanted?~~ **Answered 2026-08-02: no — leave the rows alone.** Step 2.3 is declined; see above.
+2. **Is the 10,000 ceiling Notion's or the integration's?** Still open, and now permanent rather than transitional: with Step 2.3 declined the backlog stays above the ceiling indefinitely. Step 2.1 makes it harmless *for dedup*, but **any new unbounded `databases.query` against the reader DB will silently truncate at 10,000 and report `has_more: false`.** Treat that as a standing trap. The evidence is strong but circumstantial (`has_more: false` on a perfectly full 100th page, plus the contradictory filtered counts); worth confirming against Notion's API docs.
+3. **How far beyond 10,000 has the reader DB actually grown?** Unknown, and unknowable through the paginated query. A per-month filtered count would establish it — worth doing once, since the number only grows from here.

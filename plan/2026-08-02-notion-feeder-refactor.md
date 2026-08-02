@@ -65,8 +65,11 @@ Every task's requirements implicitly include this section.
   npm, or systemd means the command ran, not that the result is right. On 2026-08-01 the
   deploy playbook reported `changed=3` while the container image was still missing. Always
   check the actual artifact or the actual log.
-- **Never mutate the Notion reader database outside Task 8**, which is blocked. Reads are
-  fine. Tasks 1–7 and 9–11 must not archive, delete, or bulk-update reader rows.
+- **Never mutate the Notion reader database. No exceptions.** Reads are fine; archiving,
+  deleting, or bulk-updating reader rows is not — in any task, for any reason, including
+  "cleaning up" the 10,000+ row backlog. The owner decided on 2026-08-02 to leave it in
+  place (Task 8). The only Notion *writes* this plan authorises are: new article pages
+  created by the normal sync, and the two new feed-health properties in Task 7.
 - **One task, one commit.** `refactor(...)` for behaviour-preserving, `fix(...)` for
   behaviour change, `test(...)` for test-only, `chore(...)` for deps/build.
 - **Push after every commit:** `git push origin master`.
@@ -378,25 +381,37 @@ once nothing writes them, and deleting a Notion property deletes its data irreve
 
 ---
 
-## Task 8 — BLOCKED: enable the 30-day retention cleanup
+## Task 8 — DECLINED: do not enable the retention cleanup
 
-**Do not implement without explicit approval from the repo owner.**
+**Decision, 2026-08-02, by the repo owner: leave the 10,000+ rows alone. Do not implement
+this task. Do not archive, delete, or bulk-update reader rows for any reason.**
 
-`deleteOldUnreadFeedItemsFromNotion()` exists and is never called (finding #3). Enabling it
-would archive **every unread reader row older than 30 days — at least 10,000 of them** — in
-bulk. Notion archive is recoverable from trash for 30 days, but this is still a large
-mutation of real data, and the function's long-standing absence from the call path may have
-been deliberate.
+`deleteOldUnreadFeedItemsFromNotion()` in `src/notion.js` stays defined and uncalled. Leave
+it that way. Do not "tidy" it by wiring it up, and do not delete it as dead code — it is
+retained deliberately, and this section is the record of why.
 
-Two things to settle before writing any code:
+Had it been enabled, it would have archived every unread reader row older than 30 days — at
+least 10,000 — in one pass. Recoverable from Notion trash for 30 days, but a large mutation
+of real data that nobody asked for.
 
-1. **Is 30-day unread retention actually wanted?**
-2. Its query is **unpaginated**, so it only ever sees the first 100 matches. Paginating it
-   drains the whole backlog in one run; leaving it unpaginated drains 100 per run, which at
-   a 10,000+ backlog is a far gentler rollout and may be the better first move.
+**This does not block anything.** Task 3 bounds the *query* by date rather than bounding the
+*database* by deletion, which is why it was designed that way: the reader DB can hold a
+million rows and the sync still reads only the last two weeks. Task 3 is the fix; retention
+was never a prerequisite for it.
 
-If approved, do the first run with an explicit cap, count rows before and after, and confirm
-no *read* rows were touched.
+What remains true while the backlog stays:
+
+- The 10,000-row pagination ceiling is still there. It no longer affects dedup after Task 3,
+  but **any new unbounded `databases.query` against the reader DB will silently truncate at
+  10,000 and report `has_more: false`**. Treat that as a standing trap, not a solved problem.
+- The true row count stays unknown — the ceiling makes it unmeasurable by pagination.
+- Notion's own UI will keep getting slower on that database. That is the owner's call, not
+  this codebase's.
+
+If the decision is ever revisited, the two things to settle first are whether 30-day unread
+retention is wanted at all, and that the function's query is **unpaginated** — it sees only
+the first 100 matches, so leaving it that way drains 100 rows per run, which at this backlog
+is a far gentler rollout than paginating it.
 
 ---
 
