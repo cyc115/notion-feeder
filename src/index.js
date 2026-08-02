@@ -1,21 +1,24 @@
 import got from 'got';
-import read from 'node-readability';
+import { Readability } from '@mozilla/readability';
+import { parseHTML } from 'linkedom';
 
 import getNewFeedItems from './feed.js';
 import { addFeedItemToNotion, getFailureCount } from './notion.js';
 import { htmlToNotionBlocks } from './parser.js';
 
-async function getRedableContent(html) {
-  return new Promise((resolve, reject) => {
-    read(html, (err, article, meta) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(article.content);
-      }
-      article.close();
-    });
-  });
+// node-readability (via jsdom) replaced 2026-08-02 -- unmaintained, pulled in
+// jsdom and the deprecated `request` package, and was the source of all 3
+// webpack "Critical dependency" warnings. @mozilla/readability + linkedom's
+// parseHTML give a much lighter DOM without a browser engine behind it.
+// Synchronous, unlike the old callback-based read() -- no Promise wrapper
+// needed. Content-quality checked against the old implementation across 20
+// recent reader-DB articles before this replaced it (see the commit for the
+// comparison): the new one never returned empty where the old one succeeded.
+function getReadableContent(html) {
+  const { document } = parseHTML(html);
+  const reader = new Readability(document);
+  const article = reader.parse();
+  return article ? article.content || '' : '';
 }
 
 async function getItemContent(item) {
@@ -28,7 +31,7 @@ async function getItemContent(item) {
       },
     });
 
-    readableContent = await getRedableContent(data.body);
+    readableContent = getReadableContent(data.body);
   } catch (err) {
     console.log(`could not get full text for ${item.link}`);
   }
