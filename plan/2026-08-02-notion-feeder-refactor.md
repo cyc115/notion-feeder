@@ -129,19 +129,43 @@ Every task's requirements implicitly include this section.
 **Why:** there are no tests. Every later task changes behaviour, and none of them can be
 made safe without this. Node 22 ships `node:test` — no new dependency.
 
-**The hazard:** adding `"type": "module"` makes Node treat every `.js` file as ESM.
-`webpack.config.js`, `.eslintrc.js`, and `.prettierrc.js` all use `module.exports` and will
-throw `ReferenceError: module is not defined`. All three must be renamed to `.cjs` in the
-same commit. `.babelrc` is JSON and needs no change.
+**The hazards.** `"type": "module"` makes Node treat every `.js` file as ESM, which breaks
+three separate things. **This whole task was rehearsed end-to-end on a scratch copy on
+2026-08-02; the four steps below are the version that passes both gates.** Do them all in
+one commit — the intermediate states do not build.
+
+1. `webpack.config.js`, `.eslintrc.js`, `.prettierrc.js` use `module.exports` →
+   `ReferenceError: module is not defined`. Rename all three to `.cjs`.
+   (`.babelrc` is JSON and needs no change. Webpack 5 auto-discovers `webpack.config.cjs`,
+   and the `build-prod`/`develop` scripts do not pass `--config`, so they need no edit —
+   verified.)
+2. **ESM requires fully specified import paths.** `src/` has six extensionless relative
+   imports; under `"type": "module"` webpack fails with
+   `BREAKING CHANGE: The request './parser' failed to resolve only because it was resolved
+   as fully specified` — **3 errors, build fails**. Every one needs a `.js` suffix.
+3. **`node --test test/` does not work on Node 22** — it resolves `test` as a module and
+   dies with `Cannot find module '/app/test'`, reporting `pass 0 fail 1`. Use bare
+   `node --test`, which auto-discovers `test/*.test.js` (verified: `pass 3 fail 0`).
+   `node --test test/*.test.js` also works if you prefer it explicit.
 
 - [ ] `git mv webpack.config.js webpack.config.cjs`
 - [ ] `git mv .eslintrc.js .eslintrc.cjs`
 - [ ] `git mv .prettierrc.js .prettierrc.cjs`
+- [ ] Add `.js` to all six extensionless relative imports:
+      ```
+      src/index.js:4  './feed'    -> './feed.js'
+      src/index.js:5  './notion'  -> './notion.js'
+      src/index.js:6  './parser'  -> './parser.js'
+      src/feed.js:4   './helpers' -> './helpers.js'
+      src/feed.js:5   './notion'  -> './notion.js'
+      src/feed.js:6   './xml'     -> './xml.js'
+      ```
+      One command does it, but re-read the diff afterwards:
+      `sed -i -E "s#(from '\./[a-zA-Z]+)'#\1.js'#g" src/*.js`
+      Then confirm none remain: `grep -rnE "from '\./[^']*'" src/ | grep -v "\.js'"`
+      must print nothing.
 - [ ] In `package.json`: add `"type": "module"` at top level, and add
-      `"test": "node --test test/"` to `scripts`.
-- [ ] Check whether `package.json` scripts reference `webpack.config.js` by name. If
-      `build-prod`/`develop` pass `--config`, update the path. If they rely on
-      auto-discovery, webpack 5 finds `.cjs` automatically — confirm by running the build.
+      **`"test": "node --test"`** to `scripts`.
 - [ ] Create `test/xml.test.js` pinning `src/xml.js`. Required cases, all of which were
       run ad-hoc on 2026-08-01 and passed:
 
@@ -189,11 +213,11 @@ test('looksLikeHtml does not misclassify feeds', () => {
 - [ ] Run: `podman run --rm -v "$PWD":/app:z -w /app node:22-alpine sh -c 'npm test'`
 - [ ] Run: `podman run --rm -v "$PWD":/app:z -w /app node:22-alpine sh -c 'npm run build-prod 2>&1 | tail -5'`
 
-**Verify**
-- `npm test` reports `pass 7` (or more) and `fail 0`.
-- `npm run build-prod` still ends with `compiled with 3 warnings`. **This is the real gate**
-  — the ESM switch is the risky half, and a broken build here means the deploy would ship
-  nothing.
+**Verify** — both gates, exactly as rehearsed on 2026-08-02:
+- `npm test` → `# fail 0`, with `# pass` matching your test count.
+- `npm run build-prod` → ends `webpack 5.64.4 compiled with 3 warnings`. **This is the real
+  gate.** `compiled with 3 errors and 3 warnings` means step 2 above was missed. A broken
+  build here ships nothing, and the deploy playbook will still report `changed`.
 
 **Rollback:** `git revert`. Nothing deployed.
 
@@ -211,6 +235,11 @@ the whole list. It also costs 42 s and 100 round-trips per run, growing.
 
 Only articles inside the backfill window can be inserted, so only those need to be in the
 dedup set. Filtering fixes the correctness bug and the cost together.
+
+Verified 2026-08-02 against the live reader DB: the property is named exactly
+`Created At` and its type is **`created_time`**. A `date` filter works on it, and it
+accepts a full ISO-8601 timestamp with timezone (`.toISOString()`) — a 14-day filter
+returned in 0.6 s. No schema change is needed for this task.
 
 - [ ] Change `getExistingArticles()` in `src/notion.js` to accept `sinceDays` and add a
       Notion filter on the `Created At` property:
@@ -284,6 +313,9 @@ clarity fix and a place to hang a test.
 **Why (finding #7):** the timeout is a hard-coded 60 s. On 2026-08-01 one slow host
 (`kill-the-newsletter.com`) spent 60 s of a 137 s run doing nothing.
 
+Verified 2026-08-02: `new Parser({ timeout: N })` is accepted, and rss-parser's default
+is `60000` — which confirms where the 60 s came from.
+
 - [ ] Add `NOTION_FEEDER_FEED_TIMEOUT_MS`, default `20000`. Apply it to both the
       `rss-parser` construction (`new Parser({ timeout })`) and the `got.get` refetch inside
       `parseFeed` — they are currently inconsistent and both must honour it.
@@ -349,6 +381,12 @@ both are human-owned:
 This task therefore **adds two properties** to the feeds database. That is a deliberate
 reversal of the "no schema changes" non-goal, made because the alternative destroys
 information a person put there.
+
+**Unverified — check this first.** The integration is a workspace-owned bot, but whether
+it may edit a *database schema* (as opposed to page properties) was deliberately not
+tested, since doing so means mutating the schema. Try the PATCH; if it returns 403 or
+`validation_error`, stop and report — the fallback is for the owner to add the two
+properties by hand in the Notion UI, after which the rest of this task works unchanged.
 
 - [ ] Add to the feeds DB (`1b17c77ea6db4e4da6218d5b71ef4f2c`) via
       `PATCH /v1/databases/{id}`:
