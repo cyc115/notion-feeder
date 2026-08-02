@@ -10,7 +10,12 @@ const {
   NOTION_FEEDS_DATABASE_ID,
   NODE_ENVIRONMENT,
 } = process.env;
-export const MAX_PARAGRAPH_LENGTH = 95;
+// Two different Notion API limits, both 100, previously conflated under one
+// constant (MAX_PARAGRAPH_LENGTH). 95 is a deliberate margin under each --
+// not the actual limit -- kept identical to the value that has been running
+// in production.
+export const MAX_RICH_TEXT_RUNS_PER_BLOCK = 95; // rich_text entries per paragraph block
+export const MAX_BLOCKS_PER_REQUEST = 95; // children blocks per create/append call
 
 // Per-article failures are caught and logged so one bad article doesn't abort
 // the whole run, but they must still surface: without this the process always
@@ -227,10 +232,10 @@ function compressParagraphLineNumber(content) {
   if (type === 'paragraph') {
     const pLen = paragraph.rich_text.length;
     // check if paragraph is too long
-    if (pLen >= MAX_PARAGRAPH_LENGTH) {
-      // compress all lines after MAX_PARAGRAPH_LENGTH into this block
+    if (pLen >= MAX_RICH_TEXT_RUNS_PER_BLOCK) {
+      // compress all lines after MAX_RICH_TEXT_RUNS_PER_BLOCK into this block
       const finalBlock = genTextBlock('Content truncated:');
-      paragraph.rich_text.slice(MAX_PARAGRAPH_LENGTH).forEach((block) => {
+      paragraph.rich_text.slice(MAX_RICH_TEXT_RUNS_PER_BLOCK).forEach((block) => {
         // Same non-text rich_text hazard as truncateParagraph — skip anything
         // that isn't a plain text run rather than dereferencing .text.content.
         if (isTextRun(block)) {
@@ -243,7 +248,7 @@ function compressParagraphLineNumber(content) {
       // uncompressed (so the >100-run limit still tripped) and threw a
       // TypeError reading `paragraph.text.slice` of undefined.
       paragraph.rich_text = [
-        ...paragraph.rich_text.slice(0, MAX_PARAGRAPH_LENGTH),
+        ...paragraph.rich_text.slice(0, MAX_RICH_TEXT_RUNS_PER_BLOCK),
         finalBlock,
       ];
     }
@@ -287,7 +292,7 @@ export async function addFeedItemToNotion(notionItem) {
   try {
     let { title, link, content } = notionItem;
     let sanitizedContentArr = content
-      .slice(0, MAX_PARAGRAPH_LENGTH) // remove content longer than 95 lines
+      .slice(0, MAX_BLOCKS_PER_REQUEST) // Notion allows at most 100 children per request
       .filter((c) => !isParagraphUndefined(c))
       .map(compressParagraphLineNumber)
       .map(truncateParagraph);
@@ -324,10 +329,10 @@ export async function addFeedItemToNotion(notionItem) {
     // `path.block_id should be a valid uuid, instead was "undefined"` on the
     // second and later chunks. Always append to the created page's id.
     const pageId = createdPage.id;
-    content = content.slice(MAX_PARAGRAPH_LENGTH);
+    content = content.slice(MAX_BLOCKS_PER_REQUEST);
     while (content.length > 0) {
       sanitizedContentArr = content
-        .slice(0, MAX_PARAGRAPH_LENGTH) // remove content longer than 95 lines
+        .slice(0, MAX_BLOCKS_PER_REQUEST) // Notion allows at most 100 children per request
         .filter((c) => !isParagraphUndefined(c))
         .map(compressParagraphLineNumber)
         .map(truncateParagraph);
@@ -336,7 +341,7 @@ export async function addFeedItemToNotion(notionItem) {
         block_id: pageId,
         children: sanitizedContentArr,
       });
-      content = content.slice(MAX_PARAGRAPH_LENGTH);
+      content = content.slice(MAX_BLOCKS_PER_REQUEST);
     }
   } catch (err) {
     console.log('========');

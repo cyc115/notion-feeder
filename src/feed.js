@@ -90,11 +90,6 @@ async function getNewFeedArticlesFrom(feed, daysToBackfill = 1) {
   // per feed
   items.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate));
 
-  // attach the feed object to each feed article
-  for (let i = 0; i < items.length; i++) {
-    items[0].feed = feed;
-  }
-
   return items.slice(0, NOTION_FEEDER_MAX_ITEMS);
 }
 
@@ -165,7 +160,7 @@ async function fetchFeedArticles(feed) {
 
 // return true if any of the feed filter matches the article
 // otherwise return false
-function matchFeedFilter(feed, article) {
+export function matchFeedFilter(feed, article) {
   const keys = Object.keys(article);
   const feedFilters = feed.filters;
 
