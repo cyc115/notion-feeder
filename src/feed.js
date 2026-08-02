@@ -2,7 +2,11 @@ import Parser from 'rss-parser';
 import dotenv from 'dotenv';
 import got from 'got';
 import timeDifference from './helpers.js';
-import { getFeedUrlsFromNotion, getExistingArticles } from './notion.js';
+import {
+  getFeedUrlsFromNotion,
+  getExistingArticles,
+  recordFeedFetchOutcome,
+} from './notion.js';
 import { repairXml, looksLikeHtml } from './xml.js';
 
 dotenv.config();
@@ -146,9 +150,15 @@ async function fetchFeedArticles(feed) {
     console.log(
       `Number of articles meets the filter requirement: ${articles.length}`
     );
+    if (feed.id) {
+      await recordFeedFetchOutcome(feed.id, null);
+    }
     return articles;
   } catch (err) {
     console.error(`Error fetching ${feed.feedUrl} ${err}`);
+    if (feed.id) {
+      await recordFeedFetchOutcome(feed.id, err);
+    }
     return [];
   }
 }

@@ -102,11 +102,46 @@ export async function getFeedUrlsFromNotion() {
   }
 
   const feeds = response.results.map((feedItem) => ({
+    id: feedItem.id,
     title: feedItem.properties.Title.title[0].plain_text,
     feedUrl: feedItem.properties.Link.url,
     filters: getFeedItemFilter(feedItem),
   }));
   return feeds;
+}
+
+// Record a feed's fetch outcome on its own row -- NOT on `Parse quality` or
+// `Notes`, which are human-owned (verified 2026-08-02: Parse quality is a
+// select carrying an editorial judgement about content quality on 3 of 65
+// rows; Notes holds hand-written prose, including the reasons recorded when
+// five dead feeds were disabled, on 7). Writing either from code would
+// destroy something a person put there, so this adds two properties instead:
+// `Fetch status` (select: OK/Failing) and `Last fetch error` (rich_text).
+//
+// Never throws: a failure recording feed health must not fail the run.
+export async function recordFeedFetchOutcome(feedId, error) {
+  try {
+    if (error) {
+      const message = `${new Date().toISOString()}: ${String(error).slice(0, 180)}`;
+      await notion.pages.update({
+        page_id: feedId,
+        properties: {
+          'Fetch status': { select: { name: 'Failing' } },
+          'Last fetch error': { rich_text: [{ text: { content: message } }] },
+        },
+      });
+    } else {
+      await notion.pages.update({
+        page_id: feedId,
+        properties: {
+          'Fetch status': { select: { name: 'OK' } },
+          'Last fetch error': { rich_text: [] },
+        },
+      });
+    }
+  } catch (err) {
+    console.error(`Could not record fetch outcome for feed ${feedId}: ${err}`);
+  }
 }
 
 // Get a list of existing articles from the reader DB, bounded to the last
