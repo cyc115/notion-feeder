@@ -4,6 +4,14 @@
 > syntax for tracking. Every task ends with a commit and a real verification — do not batch
 > tasks, and do not mark a box until its Verify block has actually been run and matched.
 
+**Status, 2026-08-02: complete.** Tasks 1–7, 9, 10 done, deployed, and verified live —
+commits `2928fcb`, `ff5f9e1`, `23b4f4d` (Task 3's source changes landed here too — a
+commit-hygiene slip, not a functional issue), `da16b5e`, `9ca8b4d`/`2c78f71` (homelab),
+`39197e9`, `df5bae8`, `29d83f6`, `828f189`. Task 8 declined by the repo owner (kept as a
+recorded decision, not deleted). Task 11 was attempted, caused a worse regression than the
+problem it fixed, and was reverted the same day — see its section below and `homelab`
+commit `afeeba6`. Total run time: 137s baseline → ~15–40s depending on how much is new.
+
 **Goal:** Fix a silent duplicate-detection failure, remove 31% of the run time, and put a
 test harness under a codebase that currently has none — without changing what lands in the
 Notion reader database.
@@ -106,11 +114,11 @@ Every task's requirements implicitly include this section.
 `icecream`, and `node-icecream` are declared and never imported. Verified with
 `grep -rho "from '<dep>'\|require('<dep>')" src/` → 0 hits for each.
 
-- [ ] Remove `async`, `http`, `icecream`, `node-icecream` from `dependencies` in
+- [x] Remove `async`, `http`, `icecream`, `node-icecream` from `dependencies` in
       `package.json`. Leave every other dependency alone.
-- [ ] Regenerate the lockfile:
+- [x] Regenerate the lockfile:
       `podman run --rm -v "$PWD":/app:z -w /app node:22-alpine sh -c 'npm install --no-fund --no-audit'`
-- [ ] Build: `podman run --rm -v "$PWD":/app:z -w /app node:22-alpine sh -c 'npm run build-prod 2>&1 | tail -5'`
+- [x] Build: `podman run --rm -v "$PWD":/app:z -w /app node:22-alpine sh -c 'npm run build-prod 2>&1 | tail -5'`
 
 **Verify**
 - Build ends with `webpack 5.64.4 compiled with 3 warnings` (3, not more — a new warning
@@ -155,10 +163,10 @@ one commit — the intermediate states do not build.
    `node --test`, which auto-discovers `test/*.test.js` (verified: `pass 3 fail 0`).
    `node --test test/*.test.js` also works if you prefer it explicit.
 
-- [ ] `git mv webpack.config.js webpack.config.cjs`
-- [ ] `git mv .eslintrc.js .eslintrc.cjs`
-- [ ] `git mv .prettierrc.js .prettierrc.cjs`
-- [ ] Add `.js` to all six extensionless relative imports:
+- [x] `git mv webpack.config.js webpack.config.cjs`
+- [x] `git mv .eslintrc.js .eslintrc.cjs`
+- [x] `git mv .prettierrc.js .prettierrc.cjs`
+- [x] Add `.js` to all six extensionless relative imports:
       ```
       src/index.js:4  './feed'    -> './feed.js'
       src/index.js:5  './notion'  -> './notion.js'
@@ -171,9 +179,9 @@ one commit — the intermediate states do not build.
       `sed -i -E "s#(from '\./[a-zA-Z]+)'#\1.js'#g" src/*.js`
       Then confirm none remain: `grep -rnE "from '\./[^']*'" src/ | grep -v "\.js'"`
       must print nothing.
-- [ ] In `package.json`: add `"type": "module"` at top level, and add
+- [x] In `package.json`: add `"type": "module"` at top level, and add
       **`"test": "node --test"`** to `scripts`.
-- [ ] Create `test/xml.test.js` pinning `src/xml.js`. Required cases, all of which were
+- [x] Create `test/xml.test.js` pinning `src/xml.js`. Required cases, all of which were
       run ad-hoc on 2026-08-01 and passed:
 
 ```js
@@ -213,12 +221,12 @@ test('looksLikeHtml does not misclassify feeds', () => {
 });
 ```
 
-- [ ] Create `test/helpers.test.js` pinning `timeDifference` from `src/helpers.js` —
+- [x] Create `test/helpers.test.js` pinning `timeDifference` from `src/helpers.js` —
       at minimum: exact-day boundaries, sub-day differences, and a negative difference
       (`date2` in the future), since `getNewFeedArticlesFrom` compares `diffInDays <= N`
       and a future `pubDate` must not be silently excluded.
-- [ ] Run: `podman run --rm -v "$PWD":/app:z -w /app node:22-alpine sh -c 'npm test'`
-- [ ] Run: `podman run --rm -v "$PWD":/app:z -w /app node:22-alpine sh -c 'npm run build-prod 2>&1 | tail -5'`
+- [x] Run: `podman run --rm -v "$PWD":/app:z -w /app node:22-alpine sh -c 'npm test'`
+- [x] Run: `podman run --rm -v "$PWD":/app:z -w /app node:22-alpine sh -c 'npm run build-prod 2>&1 | tail -5'`
 
 **Verify** — both gates, exactly as rehearsed on 2026-08-02:
 - `npm test` → `# fail 0`, with `# pass` matching your test count.
@@ -248,7 +256,7 @@ Verified 2026-08-02 against the live reader DB: the property is named exactly
 accepts a full ISO-8601 timestamp with timezone (`.toISOString()`) — a 14-day filter
 returned in 0.6 s. No schema change is needed for this task.
 
-- [ ] Change `getExistingArticles()` in `src/notion.js` to accept `sinceDays` and add a
+- [x] Change `getExistingArticles()` in `src/notion.js` to accept `sinceDays` and add a
       Notion filter on the `Created At` property:
 
 ```js
@@ -260,13 +268,13 @@ export async function getExistingArticles(sinceDays) {
 }
 ```
 
-- [ ] In `src/feed.js`, call it with the backfill window plus a margin:
+- [x] In `src/feed.js`, call it with the backfill window plus a margin:
       `const windowDays = Number(NOTION_FEEDER_BACKFILL_DAYS || 7) + 7;`
       The margin covers clock skew and articles whose `pubDate` trails their insertion date.
-- [ ] Change the existing log line to include the window and the elapsed time, e.g.
+- [x] Change the existing log line to include the window and the elapsed time, e.g.
       `Found ${articles.length} existing articles in Reader (last ${windowDays}d, ${ms}ms)`.
       The current line is the only visibility into this phase; keep it informative.
-- [ ] Build, deploy, run.
+- [x] Build, deploy, run.
 
 **Verify** — all four, in order:
 1. Log shows roughly `Found ~450 existing articles in Reader (last 14d, ~2500ms)`, not
@@ -294,14 +302,14 @@ window would be re-added. Accepted — arguably the correct behaviour.
 item. After Task 3 the array is small, so this is no longer a performance fix — it is a
 clarity fix and a place to hang a test.
 
-- [ ] Extract the dedup into an exported pure function in `src/feed.js`, e.g.
+- [x] Extract the dedup into an exported pure function in `src/feed.js`, e.g.
       `export function dedupeAgainst(existingUrls, articles)` taking a `Set` of URLs.
-- [ ] Build the `Set` once from `getExistingArticles()`; keep the existing behaviour of
+- [x] Build the `Set` once from `getExistingArticles()`; keep the existing behaviour of
       adding each accepted article's URL to the set as it is accepted, so duplicates
       *within a single run* are still caught.
-- [ ] Keep the `Remove duplicated article: <title>` log line — it is the only signal that
+- [x] Keep the `Remove duplicated article: <title>` log line — it is the only signal that
       dedup is working at all.
-- [ ] Add `test/dedup.test.js`: an article already present is dropped; a new one is kept;
+- [x] Add `test/dedup.test.js`: an article already present is dropped; a new one is kept;
       two identical articles in the same batch yield one; an article with no `link` does not
       throw.
 
@@ -323,10 +331,10 @@ clarity fix and a place to hang a test.
 Verified 2026-08-02: `new Parser({ timeout: N })` is accepted, and rss-parser's default
 is `60000` — which confirms where the 60 s came from.
 
-- [ ] Add `NOTION_FEEDER_FEED_TIMEOUT_MS`, default `20000`. Apply it to both the
+- [x] Add `NOTION_FEEDER_FEED_TIMEOUT_MS`, default `20000`. Apply it to both the
       `rss-parser` construction (`new Parser({ timeout })`) and the `got.get` refetch inside
       `parseFeed` — they are currently inconsistent and both must honour it.
-- [ ] Add the variable to the rendered env file in the homelab repo:
+- [x] Add the variable to the rendered env file in the homelab repo:
       `ansible/notion-feeder.yml`, alongside `NOTION_FEEDER_BACKFILL_DAYS`. Also add a
       matching `notion_feeder_feed_timeout_ms` var with the same default, so the value is
       declared in one place.
@@ -347,14 +355,14 @@ is `60000` — which confirms where the 60 s came from.
 
 **Why (finding #7):** 56 feeds are fetched strictly sequentially, 95 s of the run.
 
-- [ ] Replace the sequential `for` loop in `getNewFeedItems()` with a bounded-concurrency
+- [x] Replace the sequential `for` loop in `getNewFeedItems()` with a bounded-concurrency
       pool, limit 6. **Do not add a dependency** — `async` was removed in Task 1 and a small
       promise pool is ~15 lines. Do not use `Promise.all` unbounded: 56 simultaneous fetches
       against unrelated hosts is impolite and will trip rate limits.
-- [ ] Preserve the existing per-feed `try/catch` so one failing feed still cannot abort the
+- [x] Preserve the existing per-feed `try/catch` so one failing feed still cannot abort the
       run, and keep the `Error fetching <url> <err>` line shape — Task 7 and the operator
       runbook both depend on it.
-- [ ] The final `newArticles.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))`
+- [x] The final `newArticles.sort((a, b) => new Date(a.pubDate) - new Date(b.pubDate))`
       already makes ordering independent of fetch order. Confirm it is still applied *after*
       the pool resolves.
 
@@ -395,21 +403,21 @@ tested, since doing so means mutating the schema. Try the PATCH; if it returns 4
 `validation_error`, stop and report — the fallback is for the owner to add the two
 properties by hand in the Notion UI, after which the rest of this task works unchanged.
 
-- [ ] Add to the feeds DB (`1b17c77ea6db4e4da6218d5b71ef4f2c`) via
+- [x] Add to the feeds DB (`1b17c77ea6db4e4da6218d5b71ef4f2c`) via
       `PATCH /v1/databases/{id}`:
       - `Fetch status` — `select`, options `OK` and `Failing`.
       - `Last fetch error` — `rich_text`.
       Adding a property is non-destructive and affects no existing row.
-- [ ] On fetch failure: set `Fetch status = Failing` and write
+- [x] On fetch failure: set `Fetch status = Failing` and write
       `<ISO-8601 UTC>: <first line of error>` to `Last fetch error`, truncated to 200
       characters (stack traces are long and Notion rich-text has limits).
-- [ ] On success: set `Fetch status = OK` and clear `Last fetch error`.
-- [ ] Never touch `Parse quality` or `Notes`.
-- [ ] Failures writing these must **never** fail the run — wrap in their own `try/catch`,
+- [x] On success: set `Fetch status = OK` and clear `Last fetch error`.
+- [x] Never touch `Parse quality` or `Notes`.
+- [x] Failures writing these must **never** fail the run — wrap in their own `try/catch`,
       log at most one line.
-- [ ] `getFeedUrlsFromNotion()` must also return each feed's `id`, so the writeback knows
+- [x] `getFeedUrlsFromNotion()` must also return each feed's `id`, so the writeback knows
       which page to patch.
-- [ ] Do **not** auto-disable feeds in this task. That needs a consecutive-failure counter
+- [x] Do **not** auto-disable feeds in this task. That needs a consecutive-failure counter
       that cannot fire on a transient error, and it is a separate decision.
 
 **Verify**
@@ -468,14 +476,14 @@ is a far gentler rollout than paginating it.
 source of all 3 webpack warnings. It is also why `src/index.js` needs an explicit
 `process.exit()` — jsdom and `got` leave handles open and the event loop never drains.
 
-- [ ] Replace with `@mozilla/readability` + `linkedom` (lighter) or `jsdom` (higher
+- [x] Replace with `@mozilla/readability` + `linkedom` (lighter) or `jsdom` (higher
       fidelity). Keep `getItemContent()`'s existing "pick the longest of readable content /
       `content:encoded` / `content` / placeholder" behaviour exactly.
-- [ ] **Content-quality check before committing.** Take 20 recent article URLs from the
+- [x] **Content-quality check before committing.** Take 20 recent article URLs from the
       reader DB, extract with both the old and the new implementation, and compare output
       lengths. The new one must never return empty where the old one succeeded. Record the
       comparison in the commit message.
-- [ ] Only after that: check whether the process now exits on its own without the explicit
+- [x] Only after that: check whether the process now exits on its own without the explicit
       `process.exit()`. **Remove the hack only with evidence** — a regression there hangs the
       systemd oneshot until `TimeoutStartSec=1800`, i.e. a 30-minute stuck unit every night.
       If in doubt, leave it.
@@ -494,12 +502,12 @@ source of all 3 webpack warnings. It is also why `src/index.js` needs an explici
 
 `refactor: split the overloaded block-limit constant; drop a dead loop`
 
-- [ ] **Finding #9:** `MAX_PARAGRAPH_LENGTH = 95` is used for two unrelated Notion limits —
+- [x] **Finding #9:** `MAX_PARAGRAPH_LENGTH = 95` is used for two unrelated Notion limits —
       rich-text runs per paragraph (`src/notion.js` ~line 173) and child blocks per request
       (~line 233). Both API limits are 100. Replace with `MAX_RICH_TEXT_RUNS_PER_BLOCK` and
       `MAX_BLOCKS_PER_REQUEST`, both `95`, and comment that 95 is a deliberate margin under
       the API's 100.
-- [ ] **Finding #12:** delete the dead loop in `src/feed.js`:
+- [x] **Finding #12:** delete the dead loop in `src/feed.js`:
 
 ```js
 for (let i = 0; i < items.length; i++) {
@@ -517,33 +525,38 @@ correct paragraph splitting).
 
 ---
 
-## Task 11 — Stop the duplicate journald logging (homelab repo)
+## Task 11 — ATTEMPTED AND REVERTED 2026-08-02: duplicate journald logging
 
-`fix(notion-feeder): stop double-logging to journald`
+`fix(notion-feeder): stop double-logging to journald` — **reverted the same day; left open.**
 
 **Why (finding #11):** every log line is written twice, by `conmon` and by `podman` —
 verified with `journalctl -o json` grouped by `_COMM`: 1035 identical lines from each. It is
 a logging artifact, **not** a double run; nothing is written to Notion twice. But it doubles
 journald volume and it reads like the sync is running twice, which is actively misleading.
 
-- [ ] In `homelab`, add `LogDriver=passthrough` to the `[Container]` section of
+- [x] In `homelab`, add `LogDriver=passthrough` to the `[Container]` section of
       `containers/notion-feeder/notion-feeder.container`.
-- [ ] Deploy with `ansible-playbook -i inventory.ini notion-feeder.yml`.
+- [x] Deploy with `ansible-playbook -i inventory.ini notion-feeder.yml`.
 
-**Verify**
+**What happened:** `passthrough` is a real, documented option on this podman 5.4.2
+(`podman-run(1)`: *"passes down the standard streams... to the container"*), and deploying
+it did stop the duplication — but it also stopped the application's OWN output from
+reaching journald at all. A full run left only podman's own container-lifecycle lines
+(`create`/`init`/`start`/`attach`/`died`/`remove`) in the journal — zero lines of
+`Found N existing articles` or `Run complete`, the exact lines this entire refactor effort
+was reading to verify every other task. That is precisely the failure mode this section's
+original verify block warned about ("if passthrough sends output somewhere else... revert
+rather than losing the logs") — so it was reverted the same day. Confirmed the revert
+restored the real log lines (still doubled, as before).
 
-```sh
-ansible services -i inventory.ini -m shell -a \
-  'journalctl --user -u notion-feeder --since "-10min" --no-pager -o json |
-   python3 -c "import sys,json,collections; c=collections.Counter();
-   [c.update([json.loads(l).get(\"_COMM\")]) for l in sys.stdin]; print(c)"'
-```
+**Left as an open problem.** The comment now in
+`containers/notion-feeder/notion-feeder.container` records what was tried and why it
+failed, so a future attempt does not have to rediscover this. Candidates not yet tried:
+a `StandardOutput=`/`StandardError=` override on the *systemd* unit rather than the
+Quadlet's `LogDriver=`, or accepting the duplication and instead filtering it downstream
+(e.g. a `journalctl` view or dashboard query keyed on a single `_COMM`).
 
-One writer, and the line count roughly halves. Logs must still be readable via
-`journalctl --user -u notion-feeder` — if `passthrough` sends output somewhere else on this
-podman version, revert rather than losing the logs.
-
-**Rollback:** `git revert` in `homelab`, redeploy.
+**Rollback:** already reverted; see `homelab` commit `afeeba6`.
 
 ---
 
