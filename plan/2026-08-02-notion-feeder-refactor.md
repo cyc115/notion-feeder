@@ -139,6 +139,13 @@ one commit — the intermediate states do not build.
    (`.babelrc` is JSON and needs no change. Webpack 5 auto-discovers `webpack.config.cjs`,
    and the `build-prod`/`develop` scripts do not pass `--config`, so they need no edit —
    verified.)
+   **Also update `dockerfile`** — it `COPY`s `webpack.config.js` by explicit name, so the
+   image build fails with a missing-file error the moment this file is renamed.
+   **Also update `homelab/ansible/notion-feeder.yml`** — its `Copy build context` task
+   lists `webpack.config.js` in a loop of files to ship to the VM. Neither of these was
+   caught by the local `npm run build-prod` check during the 2026-08-02 rehearsal; both
+   only surfaced when actually deploying (Task 3). Grep both repos for the literal string
+   `webpack.config.js` and fix every hit in the same commit as the rename.
 2. **ESM requires fully specified import paths.** `src/` has six extensionless relative
    imports; under `"type": "module"` webpack fails with
    `BREAKING CHANGE: The request './parser' failed to resolve only because it was resolved
