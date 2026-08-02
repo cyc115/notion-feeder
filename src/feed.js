@@ -108,8 +108,16 @@ function matchFeedFilter(feed, article) {
   });
 }
 export default async function getNewFeedItems() {
-  const existingArticles = await getExistingArticles();
-  console.log(`Found ${existingArticles.length} existing articles in Reader`);
+  // Margin beyond the backfill window covers clock skew and articles whose
+  // pubDate trails their insertion date -- only articles inside this window
+  // can ever be dedup candidates, so only those need to be fetched.
+  const windowDays = Number(NOTION_FEEDER_BACKFILL_DAYS || 7) + 7;
+  const existingArticlesStart = Date.now();
+  const existingArticles = await getExistingArticles(windowDays);
+  const existingArticlesMs = Date.now() - existingArticlesStart;
+  console.log(
+    `Found ${existingArticles.length} existing articles in Reader (last ${windowDays}d, ${existingArticlesMs}ms)`
+  );
 
   const feeds = await getFeedUrlsFromNotion();
 

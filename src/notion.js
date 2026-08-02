@@ -109,8 +109,24 @@ export async function getFeedUrlsFromNotion() {
   return feeds;
 }
 
-// Get a list of existing articles from the reader DB
-export async function getExistingArticles() {
+// Get a list of existing articles from the reader DB, bounded to the last
+// `sinceDays` days.
+//
+// Unfiltered, this query pages the ENTIRE reader DB and stops at exactly
+// 10,000 rows reporting has_more: false -- a pagination ceiling, not the true
+// row count (verified 2026-08-02: a `Created At <= now-30d` filter also
+// returns exactly 10,000, while `>= now-14d` returns 434, which cannot both be
+// true of the same database unless 10,000 is a ceiling). That silently
+// truncates dedup once the DB exceeds it. It also cost 42s and 100 API
+// round-trips per run before this fix, 31% of a 137s baseline run.
+//
+// Only articles inside the backfill window can ever be candidates for
+// insertion, so only those need to be in the dedup set -- bounding the query
+// fixes both the correctness bug and the cost at once.
+export async function getExistingArticles(sinceDays) {
+  const since = new Date();
+  since.setDate(since.getDate() - sinceDays);
+
   let cursor;
   let articles = [];
 
@@ -118,6 +134,12 @@ export async function getExistingArticles() {
     const { results, next_cursor } = await notion.databases.query({
       database_id: NOTION_READER_DATABASE_ID,
       start_cursor: cursor,
+      filter: {
+        property: 'Created At',
+        date: {
+          on_or_after: since.toISOString(),
+        },
+      },
     });
 
     articles = articles.concat(

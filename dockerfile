@@ -3,7 +3,7 @@
 # tags). Replaces mhart/alpine-node:16, which is EOL and unmaintained since 2022.
 FROM node:22-alpine AS builder
 WORKDIR /app
-COPY package*.json webpack.config.js ./
+COPY package*.json webpack.config.cjs ./
 COPY src ./src
 # `npm i` masked build failures because the original used `;` between commands;
 # `&&` makes a failed install fail the image build.
